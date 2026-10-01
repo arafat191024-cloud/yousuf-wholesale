@@ -1,20 +1,43 @@
-* { box-sizing: border-box; }
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", "Noto Sans Bengali", system-ui, sans-serif;
+  --color-ink: #0c1222;
+  --color-brass: #8f4f38;
+  --color-brass-deep: #6f3b28;
+  --color-paper: #f6f3ee;
+  --color-sand: #faf7f3;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Bengali", sans-serif;
-  color: #111;
-  background: #fafafa;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-paper);
+  -webkit-tap-highlight-color: transparent;
 }
-a { color: #0a5; }
-button {
-  cursor: pointer;
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  background: #fff;
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
-input {
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+::selection {
+  background: #8f4f38;
+  color: #fff;
+}
+
+#root {
+  min-height: 100vh;
 }

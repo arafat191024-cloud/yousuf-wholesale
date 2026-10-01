@@ -1,6 +1,12 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 
 const CartContext = createContext();
+
+function addedMessage() {
+  const lang = localStorage.getItem('app_lang') || 'bn';
+  return lang === 'bn' ? 'কার্টে যোগ করা হয়েছে' : 'Item added to cart';
+}
 
 export function CartProvider({ children }) {
   const [cartItems, setCartItems] = useState(() => {
@@ -40,6 +46,7 @@ export function CartProvider({ children }) {
       ];
     });
 
+    toast.success(addedMessage());
     setIsCartOpen(true);
   };
 

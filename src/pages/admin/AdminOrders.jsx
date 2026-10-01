@@ -1,6 +1,14 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
+import {
+  isPaymentFailed,
+  isPaymentVerified,
+  normalizePaymentStatus,
+  paymentMethodLabel,
+} from '../../lib/paymentConfig';
 
 export default function AdminOrders() {
   const { lang, setLang } = useLanguage();
@@ -10,7 +18,6 @@ export default function AdminOrders() {
   const [searchQuery, setSearchQuery] = useState('');
   const [productsStock, setProductsStock] = useState({});
 
-  // Edit Modal State
   const [editingOrder, setEditingOrder] = useState(null);
 
   const labels = {
@@ -18,7 +25,7 @@ export default function AdminOrders() {
       title: 'পাইকারি অর্ডার ড্যাশবোর্ড (Yousuf Enterprise)',
       totalOrders: 'মোট অর্ডার:',
       refresh: '🔄 রিফ্রেশ',
-      searchPlaceholder: 'দোকানের নাম, ফোন বা মেমো নং...',
+      searchPlaceholder: 'দোকানের নাম, ফোন, মেমো বা TrxID...',
       filterAll: 'সবগুলো',
       filterPending: 'অপেক্ষমান',
       filterApproved: 'অনুমোদিত',
@@ -39,17 +46,23 @@ export default function AdminOrders() {
       close: 'বন্ধ করুন',
       paymentMethod: 'পেমেন্ট মেথড',
       paymentStatus: 'পেমেন্ট স্ট্যাটাস',
-      markPaid: '✓ Mark as Paid',
-      markUnpaid: '⊘ Mark as Unpaid',
+      markPaid: '✓ Paid / Verified',
+      markUnpaid: '⊘ Unpaid',
+      markFailed: 'Failed',
       stockStatus: 'লাইভ স্টক (অ্যাডমিন)',
       inStock: 'স্টকে আছে',
-      stockOut: '⚠️ স্টক সংকট / আউট'
+      stockOut: '⚠️ স্টক সংকট / আউট',
+      trxId: 'TrxID',
+      copy: 'কপি',
+      copied: 'TrxID কপি হয়েছে',
+      receipt: 'রসিদ রেফারেন্স',
+      products: 'পণ্য ও স্টক',
     },
     en: {
       title: 'Wholesale Orders Dashboard (Yousuf Enterprise)',
       totalOrders: 'Total Orders:',
       refresh: '🔄 Refresh',
-      searchPlaceholder: 'Search by shop, phone, memo...',
+      searchPlaceholder: 'Search by shop, phone, memo, TrxID...',
       filterAll: 'All',
       filterPending: 'Pending',
       filterApproved: 'Approved',
@@ -70,11 +83,17 @@ export default function AdminOrders() {
       close: 'Close',
       paymentMethod: 'Payment Method',
       paymentStatus: 'Payment Status',
-      markPaid: '✓ Mark as Paid',
-      markUnpaid: '⊘ Mark as Unpaid',
+      markPaid: '✓ Paid / Verified',
+      markUnpaid: '⊘ Unpaid',
+      markFailed: 'Failed',
       stockStatus: 'Live Stock (Admin)',
       inStock: 'In Stock',
-      stockOut: '⚠️ Out of Stock'
+      stockOut: '⚠️ Out of Stock',
+      trxId: 'TrxID',
+      copy: 'Copy',
+      copied: 'TrxID copied',
+      receipt: 'Receipt reference',
+      products: 'Products & stock',
     }
   };
 
@@ -119,8 +138,8 @@ export default function AdminOrders() {
 
     if (targetOrder.status === 'delivered' && fields.status !== undefined && fields.status !== 'delivered') {
       const confirmRevert = window.confirm(
-        lang === 'bn' 
-          ? 'এই অর্ডারটি ইতিমধ্যে Delivered করা হয়েছে। আপনি কি নিশ্চিত যে এর স্ট্যাটাস পরিবর্তন করতে চান?' 
+        lang === 'bn'
+          ? 'এই অর্ডারটি ইতিমধ্যে Delivered করা হয়েছে। আপনি কি নিশ্চিত যে এর স্ট্যাটাস পরিবর্তন করতে চান?'
           : 'This order is already Delivered. Are you sure you want to change its status?'
       );
       if (!confirmRevert) return;
@@ -142,8 +161,11 @@ export default function AdminOrders() {
 
     if (!error) {
       setOrders(orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)));
+      if (fields.payment_status) {
+        toast.success(lang === 'bn' ? 'পেমেন্ট স্ট্যাটাস আপডেট হয়েছে' : 'Payment status updated');
+      }
     } else {
-      alert('Error updating order: ' + error.message);
+      toast.error((lang === 'bn' ? 'আপডেট হয়নি: ' : 'Update failed: ') + error.message);
     }
   };
 
@@ -168,7 +190,6 @@ export default function AdminOrders() {
     return liveMap;
   }, [productsStock, orders]);
 
-  // Analytics
   const metrics = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     const currentMonth = new Date().toISOString().slice(0, 7);
@@ -191,7 +212,7 @@ export default function AdminOrders() {
       if (orderDate.startsWith(currentMonth)) {
         monthly += amt;
       }
-      if (o.payment_status === 'paid') {
+      if (isPaymentVerified(o.payment_status)) {
         cashCollected += amt;
       }
     });
@@ -199,7 +220,6 @@ export default function AdminOrders() {
     return { daily, monthly, cashCollected, totalLifetime };
   }, [orders]);
 
-  // Orders Filter (Only Status Filters)
   const filteredOrders = orders.filter((o) => {
     const matchesFilter = activeFilter === 'all' ? true : o.status?.toLowerCase() === activeFilter.toLowerCase();
 
@@ -208,14 +228,25 @@ export default function AdminOrders() {
       (o.shop_name && o.shop_name.toLowerCase().includes(query)) ||
       (o.customer_name && o.customer_name.toLowerCase().includes(query)) ||
       (o.phone && o.phone.includes(query)) ||
-      (o.order_number && o.order_number.toLowerCase().includes(query));
+      (o.order_number && o.order_number.toLowerCase().includes(query)) ||
+      (o.transaction_id && o.transaction_id.toLowerCase().includes(query));
 
     return matchesFilter && matchesSearch;
   });
 
+  const copyTrx = async (value) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(t.copied);
+    } catch {
+      toast.error(lang === 'bn' ? 'কপি করা যায়নি' : 'Could not copy');
+    }
+  };
+
   const handlePrintMemo = (order) => {
     const printWindow = window.open('', '_blank');
     const items = Array.isArray(order.items) ? order.items : [];
+    const paidLabel = isPaymentVerified(order.payment_status) ? 'VERIFIED' : (isPaymentFailed(order.payment_status) ? 'FAILED' : 'PENDING');
     printWindow.document.write(`
       <html>
         <head>
@@ -247,7 +278,8 @@ export default function AdminOrders() {
             <div style="text-align: right;">
               <strong>মেমো নং:</strong> #${order.order_number || String(order.id).slice(0, 8)}<br/>
               <strong>তারিখ:</strong> ${new Date(order.created_at).toLocaleDateString('bn-BD')}<br/>
-              <strong>পেমেন্ট:</strong> ${order.payment_method?.toUpperCase()} (${order.payment_status === 'paid' ? 'PAID' : 'UNPAID'})<br/>
+              <strong>পেমেন্ট:</strong> ${order.payment_method?.toUpperCase()} (${paidLabel})<br/>
+              <strong>TrxID:</strong> ${order.transaction_id || '—'}<br/>
               <strong>অবস্থা:</strong> ${order.status?.toUpperCase()}
             </div>
           </div>
@@ -273,7 +305,7 @@ export default function AdminOrders() {
               `).join('')}
             </tbody>
           </table>
-          <div class="total">সর্বমোট বিল: ৳${order.total_amount} (${order.payment_status === 'paid' ? 'পরিশোধিত' : 'বকেয়া'})</div>
+          <div class="total">সর্বমোট বিল: ৳${order.total_amount} (${isPaymentVerified(order.payment_status) ? 'পরিশোধিত' : 'বকেয়া'})</div>
         </body>
       </html>
     `);
@@ -285,13 +317,16 @@ export default function AdminOrders() {
   const handleOpenEdit = (order) => {
     if (order.status === 'delivered') {
       alert(
-        lang === 'bn' 
-          ? 'ডেলিভারড (Delivered) হওয়া অর্ডার সম্পাদনা (Edit) করা সম্ভব নয়।' 
+        lang === 'bn'
+          ? 'ডেলিভারড (Delivered) হওয়া অর্ডার সম্পাদনা (Edit) করা সম্ভব নয়।'
           : 'Delivered orders cannot be edited.'
       );
       return;
     }
-    setEditingOrder(order);
+    setEditingOrder({
+      ...order,
+      payment_status: normalizePaymentStatus(order.payment_status),
+    });
   };
 
   const handleSaveEdit = async () => {
@@ -302,7 +337,9 @@ export default function AdminOrders() {
       shop_name: editingOrder.shop_name,
       phone: editingOrder.phone,
       payment_method: editingOrder.payment_method,
-      payment_status: editingOrder.payment_status,
+      payment_status: normalizePaymentStatus(editingOrder.payment_status),
+      transaction_id: editingOrder.transaction_id || null,
+      payment_reference: editingOrder.payment_reference || null,
       items: editingOrder.items,
       total_amount: recalculatedTotal
     };
@@ -310,71 +347,49 @@ export default function AdminOrders() {
     setEditingOrder(null);
   };
 
+  const actionBtn = 'inline-flex min-h-11 items-center rounded-xl border border-stone-200 bg-white px-3 text-xs font-bold transition-all duration-200 hover:bg-sand';
+
   return (
-    <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', padding: '24px 16px', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        
-        {/* Top Header */}
-        <div style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '14px',
-          background: '#ffffff',
-          padding: '18px 20px',
-          borderRadius: '12px',
-          border: '1px solid #e2e8f0',
-          marginBottom: '20px'
-        }}>
+    <div className="min-h-screen bg-paper px-4 py-6">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-stone-200 bg-white px-5 py-4 shadow-sm">
           <div>
-            <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-              {t.title}
-            </h1>
-            <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>
+            <h1 className="text-xl font-extrabold text-ink sm:text-2xl">{t.title}</h1>
+            <p className="mt-1 text-sm text-stone-500">
               {t.totalOrders} <strong>{orders.length}</strong>
             </p>
           </div>
-
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/admin/products" className={actionBtn}>{t.products}</Link>
             <button
+              type="button"
               onClick={() => setLang(lang === 'bn' ? 'en' : 'bn')}
-              style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f1f5f9', fontWeight: '700', cursor: 'pointer', fontSize: '13px' }}
+              className={actionBtn}
             >
-              🌐 {lang === 'bn' ? 'English Version' : 'বাংলা ভার্সন'}
+              {lang === 'bn' ? 'English' : 'বাংলা'}
             </button>
-            <button
-              onClick={fetchData}
-              style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', background: '#0f172a', color: '#fff', fontWeight: '600', cursor: 'pointer', fontSize: '13px' }}
-            >
+            <button type="button" onClick={fetchData} className="inline-flex min-h-11 items-center rounded-xl bg-ink px-4 text-xs font-bold text-white transition-all duration-200">
               {t.refresh}
             </button>
           </div>
         </div>
 
-        {/* 4 Analytics Metrics Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-          <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{t.dailySale}</div>
-            <div style={{ fontSize: '22px', fontWeight: '800', color: '#0d9488', marginTop: '6px' }}>৳{metrics.daily.toLocaleString()}</div>
-          </div>
-          <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{t.monthlySale}</div>
-            <div style={{ fontSize: '22px', fontWeight: '800', color: '#2563eb', marginTop: '6px' }}>৳{metrics.monthly.toLocaleString()}</div>
-          </div>
-          <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{t.cashCollection}</div>
-            <div style={{ fontSize: '22px', fontWeight: '800', color: '#16a34a', marginTop: '6px' }}>৳{metrics.cashCollected.toLocaleString()}</div>
-          </div>
-          <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{t.totalSale}</div>
-            <div style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a', marginTop: '6px' }}>৳{metrics.totalLifetime.toLocaleString()}</div>
-          </div>
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            [t.dailySale, metrics.daily, 'text-teal-700'],
+            [t.monthlySale, metrics.monthly, 'text-blue-700'],
+            [t.cashCollection, metrics.cashCollected, 'text-emerald-700'],
+            [t.totalSale, metrics.totalLifetime, 'text-ink'],
+          ].map(([label, value, color]) => (
+            <div key={label} className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-semibold text-stone-500">{label}</div>
+              <div className={`mt-2 text-xl font-extrabold ${color}`}>৳{value.toLocaleString()}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Filter Tabs (All, Pending, Approved, Delivered, Cancelled) & Search */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap gap-2">
             {[
               { id: 'all', label: t.filterAll },
               { id: 'pending', label: t.filterPending },
@@ -384,160 +399,118 @@ export default function AdminOrders() {
             ].map((tab) => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveFilter(tab.id)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '16px',
-                  border: '1px solid #cbd5e1',
-                  backgroundColor: activeFilter === tab.id ? '#0f172a' : '#fff',
-                  color: activeFilter === tab.id ? '#fff' : '#334155',
-                  fontWeight: activeFilter === tab.id ? '700' : '500',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
+                className={`min-h-11 rounded-full px-4 text-xs font-bold transition-all duration-200 ${
+                  activeFilter === tab.id ? 'bg-ink text-white' : 'border border-stone-200 bg-white text-stone-700'
+                }`}
               >
                 {tab.label}
               </button>
             ))}
           </div>
-
           <input
             type="text"
             placeholder={t.searchPlaceholder}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '13px', width: '100%', maxWidth: '280px' }}
+            className="h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition-all duration-200 focus:border-ink md:max-w-xs"
           />
         </div>
 
-        {/* Orders Listing */}
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '50px', color: '#64748b' }}>লোড হচ্ছে...</div>
+          <div className="space-y-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-40 animate-pulse rounded-3xl bg-stone-200/80" />
+            ))}
+          </div>
         ) : filteredOrders.length === 0 ? (
-          <div style={{ background: '#fff', padding: '40px', borderRadius: '12px', textAlign: 'center', color: '#64748b', border: '1px solid #e2e8f0' }}>
+          <div className="rounded-3xl border border-stone-200 bg-white px-6 py-14 text-center text-sm text-stone-500 shadow-sm">
             {t.noOrders}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <div className="flex flex-col gap-4">
             {filteredOrders.map((order) => {
               const items = Array.isArray(order.items) ? order.items : [];
-              const isPaid = order.payment_status === 'paid';
+              const verified = isPaymentVerified(order.payment_status);
+              const failed = isPaymentFailed(order.payment_status);
               const isDelivered = order.status === 'delivered';
 
               return (
-                <div key={order.id} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                  
-                  {/* Card Top */}
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '14px' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '15px', fontWeight: '800', color: '#0d9488' }}>#{order.order_number || String(order.id).slice(0, 8)}</span>
-                          <span style={{ fontSize: '12px', color: '#64748b' }}>{new Date(order.created_at).toLocaleDateString('bn-BD')}</span>
-                          
-                          {/* Payment Badge */}
-                          <span style={{
-                            padding: '2px 8px',
-                            borderRadius: '12px',
-                            fontSize: '11px',
-                            fontWeight: '700',
-                            background: isPaid ? '#dcfce7' : '#fee2e2',
-                            color: isPaid ? '#15803d' : '#b91c1c'
-                          }}>
-                            {isPaid ? 'PAID' : 'UNPAID'} ({order.payment_method?.toUpperCase() || 'COD'})
+                <article key={order.id} className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm">
+                  <div className="p-4 sm:p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-extrabold text-teal-700">#{order.order_number || String(order.id).slice(0, 8)}</span>
+                          <span className="text-xs text-stone-500">{new Date(order.created_at).toLocaleDateString('bn-BD')}</span>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${verified ? 'bg-emerald-100 text-emerald-800' : failed ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'}`}>
+                            {verified ? 'PAID / VERIFIED' : failed ? 'FAILED' : 'UNPAID'} · {paymentMethodLabel(order.payment_method, lang)}
                           </span>
-
-                          {/* Status Badge */}
-                          <span style={{
-                            padding: '2px 8px',
-                            borderRadius: '12px',
-                            fontSize: '11px',
-                            fontWeight: '700',
-                            background: isDelivered ? '#e0e7ff' : order.status === 'approved' ? '#dcfce7' : order.status === 'cancelled' ? '#fee2e2' : '#fef3c7',
-                            color: isDelivered ? '#4338ca' : order.status === 'approved' ? '#15803d' : order.status === 'cancelled' ? '#b91c1c' : '#b45309'
-                          }}>
-                            {order.status?.toUpperCase()}
+                          <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-extrabold uppercase text-stone-700">
+                            {order.status}
                           </span>
                         </div>
-
-                        <h3 style={{ margin: '0 0 4px 0', fontSize: '17px', color: '#0f172a' }}>{order.shop_name || order.customer_name}</h3>
-                        <div style={{ fontSize: '13px', color: '#2563eb', fontWeight: '600' }}>📞 {order.phone}</div>
+                        <h3 className="mt-2 text-lg font-extrabold text-ink">{order.shop_name || order.customer_name}</h3>
+                        <div className="text-sm font-semibold text-blue-700">📞 {order.phone}</div>
                       </div>
-
-                      {/* Right Amount & Actions */}
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a' }}>৳{order.total_amount?.toLocaleString()}</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px', justifyContent: 'flex-end' }}>
-                          <a href={`tel:${order.phone}`} style={{ textDecoration: 'none', padding: '5px 10px', borderRadius: '6px', background: '#f1f5f9', color: '#0f172a', fontSize: '12px', fontWeight: '600', border: '1px solid #cbd5e1' }}>
-                            {t.call}
-                          </a>
-                          <a href={`https://wa.me/88${order.phone?.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', padding: '5px 10px', borderRadius: '6px', background: '#22c55e', color: '#fff', fontSize: '12px', fontWeight: '600' }}>
-                            {t.whatsapp}
-                          </a>
-                          
-                          {/* Edit Button (Locked if Delivered) */}
-                          <button 
-                            onClick={() => handleOpenEdit(order)} 
-                            disabled={isDelivered}
-                            title={isDelivered ? 'Delivered orders cannot be modified' : 'Edit order items'}
-                            style={{ 
-                              padding: '5px 10px', 
-                              borderRadius: '6px', 
-                              border: '1px solid #cbd5e1', 
-                              background: isDelivered ? '#f1f5f9' : '#fff', 
-                              color: isDelivered ? '#94a3b8' : '#0f172a',
-                              fontSize: '12px', 
-                              fontWeight: '600', 
-                              cursor: isDelivered ? 'not-allowed' : 'pointer' 
-                            }}
-                          >
+                      <div className="text-right">
+                        <div className="text-2xl font-extrabold text-ink">৳{Number(order.total_amount || 0).toLocaleString()}</div>
+                        <div className="mt-2 flex flex-wrap justify-end gap-2">
+                          <a href={`tel:${order.phone}`} className={actionBtn}>{t.call}</a>
+                          <a href={`https://wa.me/88${order.phone?.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-xl bg-emerald-500 px-3 text-xs font-bold text-white">{t.whatsapp}</a>
+                          <button type="button" onClick={() => handleOpenEdit(order)} disabled={isDelivered} className={`${actionBtn} disabled:cursor-not-allowed disabled:text-stone-400`}>
                             {isDelivered ? t.editLocked : t.edit}
                           </button>
-
-                          <button onClick={() => handlePrintMemo(order)} style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
-                            {t.print}
-                          </button>
+                          <button type="button" onClick={() => handlePrintMemo(order)} className={actionBtn}>{t.print}</button>
                         </div>
                       </div>
                     </div>
 
-                    {/* Quick Payment & Status Bar */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px', paddingTop: '10px', borderTop: '1px dashed #e2e8f0', alignItems: 'center' }}>
-                      <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>পেমেন্ট:</span>
+                    <div className="mt-4 rounded-2xl border border-stone-200 bg-sand p-3">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-stone-500">{t.paymentMethod}</p>
+                      <p className="mt-1 text-sm font-extrabold text-ink">{paymentMethodLabel(order.payment_method, lang)}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-bold text-ink">
+                          {t.trxId}: {order.transaction_id || '—'}
+                        </span>
+                        {order.transaction_id && (
+                          <button
+                            type="button"
+                            onClick={() => copyTrx(order.transaction_id)}
+                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-ink px-3 text-xs font-bold text-white transition-all duration-200"
+                          >
+                            {t.copy}
+                          </button>
+                        )}
+                      </div>
+                      {order.payment_reference && (
+                        <p className="mt-1 text-xs text-stone-600">{t.receipt}: {order.payment_reference}</p>
+                      )}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-dashed border-stone-200 pt-3">
                       <button
-                        onClick={() => updateOrderField(order.id, { payment_status: isPaid ? 'unpaid' : 'paid' })}
-                        style={{
-                          padding: '4px 10px',
-                          borderRadius: '6px',
-                          border: isPaid ? '1px solid #fca5a5' : '1px solid #86efac',
-                          background: isPaid ? '#fef2f2' : '#f0fdf4',
-                          color: isPaid ? '#991b1b' : '#166534',
-                          fontSize: '12px',
-                          fontWeight: '700',
-                          cursor: 'pointer'
-                        }}
+                        type="button"
+                        onClick={() => updateOrderField(order.id, { payment_status: verified ? 'pending' : 'verified' })}
+                        className={`min-h-11 rounded-xl px-3 text-xs font-bold transition-all duration-200 ${verified ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-emerald-200 bg-emerald-50 text-emerald-800'}`}
                       >
-                        {isPaid ? t.markUnpaid : t.markPaid}
+                        {verified ? t.markUnpaid : t.markPaid}
                       </button>
-
-                      <div style={{ height: '14px', width: '1px', background: '#cbd5e1', margin: '0 6px' }} />
-
-                      <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>অর্ডার স্ট্যাটাস:</span>
+                      <button
+                        type="button"
+                        onClick={() => updateOrderField(order.id, { payment_status: 'failed' })}
+                        className="min-h-11 rounded-xl border border-stone-200 px-3 text-xs font-bold text-stone-600 transition-all duration-200"
+                      >
+                        {t.markFailed}
+                      </button>
+                      <span className="mx-1 hidden h-4 w-px bg-stone-300 sm:inline-block" />
                       {['pending', 'approved', 'delivered', 'cancelled'].map((st) => (
                         <button
                           key={st}
+                          type="button"
                           onClick={() => updateOrderField(order.id, { status: st })}
-                          style={{
-                            padding: '4px 8px',
-                            borderRadius: '6px',
-                            border: '1px solid #cbd5e1',
-                            background: order.status === st ? '#0f172a' : '#f8fafc',
-                            color: order.status === st ? '#fff' : '#334155',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            textTransform: 'capitalize'
-                          }}
+                          className={`min-h-11 rounded-xl px-3 text-xs font-bold capitalize transition-all duration-200 ${order.status === st ? 'bg-ink text-white' : 'border border-stone-200 bg-white text-stone-700'}`}
                         >
                           {st}
                         </button>
@@ -545,150 +518,142 @@ export default function AdminOrders() {
                     </div>
                   </div>
 
-                  {/* Items Table with Live Calculated Stock */}
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                  <div className="block divide-y divide-stone-100 border-t border-stone-100 md:hidden">
+                    {items.map((item, idx) => {
+                      const prodInfo = calculatedStock[item.productId];
+                      const remainingStock = item.variantId
+                        ? (prodInfo?.variants?.[item.variantId] ?? 25)
+                        : (prodInfo?.totalStock ?? 60);
+                      const isShortStock = remainingStock <= 0;
+                      return (
+                        <div key={idx} className="space-y-1 px-4 py-3 text-sm">
+                          <p className="font-bold text-ink">{item.title}</p>
+                          <p className="text-stone-600">৳{item.unitPrice} × {item.quantity} {lang === 'bn' ? 'পিস' : 'pcs'}</p>
+                          <p className={isShortStock ? 'text-xs font-bold text-red-700' : 'text-xs font-semibold text-emerald-700'}>
+                            {isShortStock ? `${t.stockOut} (${remainingStock})` : `✓ ${t.inStock} (${remainingStock})`}
+                          </p>
+                          <p className="font-extrabold">৳{(item.unitPrice * item.quantity).toLocaleString()}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="hidden overflow-x-auto border-t border-stone-100 md:block">
+                    <table className="hidden w-full text-left text-sm md:table">
                       <thead>
-                        <tr style={{ background: '#f8fafc', color: '#64748b', textTransform: 'uppercase', fontSize: '11px' }}>
-                          <th style={{ padding: '10px 20px' }}>পণ্য</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'right' }}>দর</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'center' }}>পরিমাণ</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'center', background: '#f1f5f9' }}>{t.stockStatus}</th>
-                          <th style={{ padding: '10px 20px', textAlign: 'right' }}>মোট</th>
+                        <tr className="bg-sand text-[11px] uppercase tracking-wide text-stone-500">
+                          <th className="px-5 py-3">{lang === 'bn' ? 'পণ্য' : 'Product'}</th>
+                          <th className="px-3 py-3 text-right">{lang === 'bn' ? 'দর' : 'Rate'}</th>
+                          <th className="px-3 py-3 text-center">{lang === 'bn' ? 'পরিমাণ' : 'Qty'}</th>
+                          <th className="px-3 py-3 text-center">{t.stockStatus}</th>
+                          <th className="px-5 py-3 text-right">{lang === 'bn' ? 'মোট' : 'Total'}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {items.map((item, idx) => {
                           const prodInfo = calculatedStock[item.productId];
-                          const remainingStock = item.variantId 
-                            ? (prodInfo?.variants?.[item.variantId] ?? 25) 
+                          const remainingStock = item.variantId
+                            ? (prodInfo?.variants?.[item.variantId] ?? 25)
                             : (prodInfo?.totalStock ?? 60);
                           const isShortStock = remainingStock <= 0;
-
                           return (
-                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '10px 20px', fontWeight: '600', color: '#0f172a' }}>{item.title}</td>
-                              <td style={{ padding: '10px 14px', textAlign: 'right', color: '#334155' }}>৳{item.unitPrice}</td>
-                              <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: '700' }}>{item.quantity} পিস</td>
-                              <td style={{ padding: '10px 14px', textAlign: 'center', background: isShortStock ? '#fef2f2' : '#f8fafc' }}>
-                                {isShortStock ? (
-                                  <span style={{ color: '#b91c1c', fontWeight: '700', fontSize: '11px' }}>
-                                    {t.stockOut} ({remainingStock} পিস)
-                                  </span>
-                                ) : (
-                                  <span style={{ color: '#15803d', fontWeight: '600', fontSize: '11px' }}>
-                                    ✓ {t.inStock} ({remainingStock} পিস অবশিষ্ট)
-                                  </span>
-                                )}
+                            <tr key={idx} className="border-t border-stone-100">
+                              <td className="px-5 py-3 font-semibold text-ink">{item.title}</td>
+                              <td className="px-3 py-3 text-right">৳{item.unitPrice}</td>
+                              <td className="px-3 py-3 text-center font-bold">{item.quantity}</td>
+                              <td className={`px-3 py-3 text-center text-xs font-bold ${isShortStock ? 'bg-red-50 text-red-700' : 'text-emerald-700'}`}>
+                                {isShortStock ? `${t.stockOut} (${remainingStock})` : `✓ ${t.inStock} (${remainingStock})`}
                               </td>
-                              <td style={{ padding: '10px 20px', textAlign: 'right', fontWeight: '700' }}>৳{(item.unitPrice * item.quantity).toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right font-bold">৳{(item.unitPrice * item.quantity).toLocaleString()}</td>
                             </tr>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
-
-                </div>
+                </article>
               );
             })}
           </div>
         )}
 
-        {/* Order Edit Modal */}
         {editingOrder && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-            <div style={{ background: '#fff', borderRadius: '12px', width: '100%', maxWidth: '520px', padding: '20px', maxHeight: '90vh', overflowY: 'auto' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#0f172a' }}>✏️ অর্ডার সম্পাদনা (Edit #{editingOrder.order_number})</h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>দোকানের নাম:</label>
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/50 p-4 transition-all duration-200">
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl">
+              <h3 className="text-lg font-extrabold text-ink">#{editingOrder.order_number}</h3>
+              <div className="mt-4 flex flex-col gap-3">
                 <input
-                  type="text"
+                  className="h-11 rounded-xl border border-stone-200 px-3 text-sm"
                   value={editingOrder.shop_name || ''}
                   onChange={(e) => setEditingOrder({ ...editingOrder, shop_name: e.target.value })}
-                  style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                 />
-
-                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>ফোন নম্বর:</label>
                 <input
-                  type="text"
+                  className="h-11 rounded-xl border border-stone-200 px-3 text-sm"
                   value={editingOrder.phone || ''}
                   onChange={(e) => setEditingOrder({ ...editingOrder, phone: e.target.value })}
-                  style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                 />
-
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>পেমেন্ট মাধ্যম:</label>
-                    <select
-                      value={editingOrder.payment_method || 'cod'}
-                      onChange={(e) => setEditingOrder({ ...editingOrder, payment_method: e.target.value })}
-                      style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff' }}
-                    >
-                      <option value="cod">ক্যাশ অন ডেলিভারি</option>
-                      <option value="bkash">বিকাশ</option>
-                      <option value="nagad">নগদ</option>
-                      <option value="bank">ব্যাংক ডিপোজিট</option>
-                    </select>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>পেমেন্ট অবস্থা:</label>
-                    <select
-                      value={editingOrder.payment_status || 'unpaid'}
-                      onChange={(e) => setEditingOrder({ ...editingOrder, payment_status: e.target.value })}
-                      style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff' }}
-                    >
-                      <option value="unpaid">বকেয়া (Unpaid)</option>
-                      <option value="paid">পরিশোধিত (Paid)</option>
-                    </select>
-                  </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <select
+                    value={editingOrder.payment_method || 'cod'}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, payment_method: e.target.value })}
+                    className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm"
+                  >
+                    <option value="cod">Cash on Delivery</option>
+                    <option value="bkash">bKash</option>
+                    <option value="nagad">Nagad</option>
+                    <option value="bank">Bank Transfer</option>
+                  </select>
+                  <select
+                    value={normalizePaymentStatus(editingOrder.payment_status)}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, payment_status: e.target.value })}
+                    className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm"
+                  >
+                    <option value="pending">Unpaid</option>
+                    <option value="verified">Paid / Verified</option>
+                    <option value="failed">Failed</option>
+                  </select>
                 </div>
+                <input
+                  className="h-11 rounded-xl border border-stone-200 px-3 font-mono text-sm"
+                  placeholder="TrxID"
+                  value={editingOrder.transaction_id || ''}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, transaction_id: e.target.value })}
+                />
+                <input
+                  className="h-11 rounded-xl border border-stone-200 px-3 text-sm"
+                  placeholder={t.receipt}
+                  value={editingOrder.payment_reference || ''}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, payment_reference: e.target.value })}
+                />
               </div>
 
-              {/* Items Quantity Edit */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '12px', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#334155' }}>আইটেম পরিমাণ (Quantity) পরিবর্তন:</h4>
+              <div className="mt-4 border-t border-stone-100 pt-3">
                 {(editingOrder.items || []).map((item, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '13px', color: '#0f172a' }}>{item.title}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => {
-                          const newQty = Math.max(1, parseInt(e.target.value) || 1);
-                          const updatedItems = [...editingOrder.items];
-                          updatedItems[i] = { ...updatedItems[i], quantity: newQty };
-                          setEditingOrder({ ...editingOrder, items: updatedItems });
-                        }}
-                        style={{ width: '60px', padding: '4px', textAlign: 'center', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                      />
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>পিস</span>
-                    </div>
+                  <div key={i} className="mb-2 flex items-center justify-between gap-3">
+                    <span className="text-sm text-ink">{item.title}</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => {
+                        const newQty = Math.max(1, parseInt(e.target.value, 10) || 1);
+                        const updatedItems = [...editingOrder.items];
+                        updatedItems[i] = { ...updatedItems[i], quantity: newQty };
+                        setEditingOrder({ ...editingOrder, items: updatedItems });
+                      }}
+                      className="h-11 w-20 rounded-xl border border-stone-200 text-center text-sm font-bold"
+                    />
                   </div>
                 ))}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button
-                  onClick={() => setEditingOrder(null)}
-                  style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer' }}
-                >
-                  {t.close}
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#0f172a', color: '#fff', fontWeight: '700', cursor: 'pointer' }}
-                >
-                  {t.save}
-                </button>
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" onClick={() => setEditingOrder(null)} className={actionBtn}>{t.close}</button>
+                <button type="button" onClick={handleSaveEdit} className="inline-flex min-h-11 items-center rounded-xl bg-ink px-4 text-sm font-bold text-white">{t.save}</button>
               </div>
             </div>
           </div>
         )}
-
       </div>
     </div>
   );

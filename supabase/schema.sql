@@ -80,9 +80,11 @@ create table if not exists public.addresses (
 );
 
 -- 6. ORDERS ------------------------------------------------------
+-- user_id is nullable so guest checkout (phone + shop) can place an order.
+-- items is the JSON cart snapshot the admin stock view already reads.
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(id) on delete cascade,
+  user_id uuid references public.profiles(id) on delete cascade,
   order_number text unique not null,
   status text not null default 'pending', -- pending|confirmed|processing|shipped|delivered|cancelled
   subtotal numeric(12,2) not null default 0,
@@ -90,9 +92,18 @@ create table if not exists public.orders (
   total_amount numeric(12,2) not null default 0,
   delivery_address text,
   phone text,
-  payment_method text,
+  customer_name text,
+  shop_name text,
+  payment_method text, -- cod | bkash | bank
+  payment_status text not null default 'pending', -- pending | verified | failed
+  transaction_id text,
+  payment_reference text,
+  items jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
+
+create index if not exists orders_transaction_id_idx on public.orders (transaction_id);
+create index if not exists orders_payment_status_idx on public.orders (payment_status);
 
 -- 7. ORDER ITEMS -------------------------------------------------------
 create table if not exists public.order_items (
@@ -158,6 +169,9 @@ create policy "orders_select_own_or_admin" on public.orders
   for select using (user_id = auth.uid() or public.is_admin());
 create policy "orders_insert_own" on public.orders
   for insert with check (user_id = auth.uid());
+-- Guest checkout: no session, and the row is not attributed to another user.
+create policy "orders_insert_guest" on public.orders
+  for insert with check (auth.uid() is null and user_id is null);
 create policy "orders_update_admin" on public.orders
   for update using (public.is_admin());
 

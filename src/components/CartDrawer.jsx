@@ -1,28 +1,58 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useCart } from '../context/CartContext';
 import { useLanguage } from '../context/LanguageContext';
 import { supabase } from '../lib/supabaseClient';
+import { EmptyState } from './EmptyState';
+import {
+  PAYMENT_ACCOUNTS,
+  needsTransactionId,
+  paymentMethodLabel,
+} from '../lib/paymentConfig';
+
+const METHODS = [
+  { id: 'cod', icon: '💵' },
+  { id: 'bkash', icon: '📱' },
+  { id: 'bank', icon: '🏦' },
+];
 
 export function CartDrawer() {
   const { cartItems, isCartOpen, setIsCartOpen, removeFromCart, updateQuantity, totalAmount, clearCart } = useCart();
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
+  const location = useLocation();
+  const isAdmin = location.pathname.startsWith('/admin');
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerShop, setCustomerShop] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cod'); // 'cod', 'bkash', 'nagad', 'bank'
+  const [paymentMethod, setPaymentMethod] = useState('cod');
+  const [transactionId, setTransactionId] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(null);
 
-  if (!isCartOpen) return null;
+  useEffect(() => {
+    document.body.style.overflow = isCartOpen && !isAdmin ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isCartOpen, isAdmin]);
+
+  const showPrepaid = needsTransactionId(paymentMethod);
 
   const handleCheckout = async (e) => {
     e.preventDefault();
     if (cartItems.length === 0) return;
 
     if (!customerPhone.trim()) {
-      alert(lang === 'bn' ? 'অনুগ্রহ করে মোবাইল নম্বরটি লিখুন!' : 'Please enter your mobile number!');
+      toast.error(t.phoneMissing);
+      return;
+    }
+
+    if (showPrepaid && !transactionId.trim()) {
+      toast.error(t.trxMissing);
       return;
     }
 
@@ -30,35 +60,62 @@ export function CartDrawer() {
 
     try {
       const generatedOrderNumber = 'YE-' + Math.floor(100000 + Math.random() * 900000);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id || null;
+
+      const payload = {
+        order_number: generatedOrderNumber,
+        customer_name: customerName.trim() || (lang === 'bn' ? 'পাইকারি ক্রেতা' : 'Wholesale Client'),
+        phone: customerPhone.trim(),
+        shop_name: customerShop.trim() || customerAddress.trim() || 'Not specified',
+        delivery_address: customerAddress.trim() || null,
+        subtotal: totalAmount,
+        total_amount: totalAmount,
+        status: 'pending',
+        payment_method: paymentMethod,
+        payment_status: 'pending',
+        transaction_id: showPrepaid ? transactionId.trim() : null,
+        payment_reference: paymentReference.trim() || null,
+        items: cartItems,
+      };
+
+      if (userId) payload.user_id = userId;
 
       const { data, error } = await supabase
         .from('orders')
-        .insert([
-          {
-            order_number: generatedOrderNumber,
-            customer_name: customerName.trim() || (lang === 'bn' ? 'পাইকারি ক্রেতা' : 'Wholesale Client'),
-            phone: customerPhone.trim(),
-            shop_name: customerShop.trim() || customerAddress.trim() || 'Not specified',
-            total_amount: totalAmount,
-            status: 'pending',
-            payment_method: paymentMethod,
-            payment_status: 'unpaid',
-            items: cartItems
-          }
-        ])
+        .insert([payload])
         .select()
         .single();
 
       if (error) {
-        alert('সমস্যা হয়েছে: ' + error.message);
+        toast.error(error.message || t.orderError);
         return;
       }
 
-      setOrderSuccess(data?.order_number || generatedOrderNumber);
+      const orderNumber = data?.order_number || generatedOrderNumber;
+      localStorage.setItem('last_order_phone', customerPhone.trim());
+      const recent = JSON.parse(localStorage.getItem('recent_orders') || '[]');
+      recent.unshift({
+        order_number: orderNumber,
+        phone: customerPhone.trim(),
+        total_amount: totalAmount,
+        payment_method: paymentMethod,
+        transaction_id: showPrepaid ? transactionId.trim() : null,
+        payment_status: 'pending',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        items: cartItems,
+      });
+      localStorage.setItem('recent_orders', JSON.stringify(recent.slice(0, 8)));
+
+      setOrderSuccess(orderNumber);
+      toast.success(t.orderSuccess);
       clearCart();
+      setTransactionId('');
+      setPaymentReference('');
     } catch (err) {
       console.error(err);
-      alert('অর্ডার প্রক্রিয়ায় সমস্যা হয়েছে।');
+      toast.error(t.orderError);
     } finally {
       setSubmitting(false);
     }
@@ -69,208 +126,197 @@ export function CartDrawer() {
     setOrderSuccess(null);
   };
 
+  const fieldClass =
+    'h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition-all duration-200 focus:border-ink';
+
+  if (isAdmin) return null;
+
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      zIndex: 9999,
-      display: 'flex',
-      justifyContent: 'flex-end'
-    }}>
-      <div style={{
-        width: '100%',
-        maxWidth: '450px',
-        background: '#ffffff',
-        height: '100%',
-        padding: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '-4px 0 25px rgba(0,0,0,0.2)',
-        boxSizing: 'border-box'
-      }}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <h2 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
-            {lang === 'bn' ? 'পাইকারি অর্ডার কার্ট' : 'Wholesale Cart'}
-          </h2>
+    <div
+      className={`fixed inset-0 z-[60] transition-all duration-200 ${
+        isCartOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+      }`}
+      aria-hidden={!isCartOpen}
+    >
+      <button
+        type="button"
+        aria-label={t.close}
+        className="absolute inset-0 bg-ink/50"
+        onClick={handleClose}
+      />
+      <aside
+        className={`absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white shadow-2xl transition-all duration-200 ${
+          isCartOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex items-center justify-between border-b border-stone-100 px-5 py-4">
+          <h2 className="text-lg font-extrabold text-ink">{t.cartTitle}</h2>
           <button
+            type="button"
             onClick={handleClose}
-            style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-stone-500 transition-all duration-200 hover:bg-sand"
           >
             ✕
           </button>
         </div>
 
         {orderSuccess ? (
-          <div style={{ textAlign: 'center', margin: 'auto 0', padding: '20px' }}>
-            <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              background: '#dcfce7',
-              color: '#16a34a',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '32px',
-              margin: '0 auto 16px auto'
-            }}>
+          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-600">
               ✓
             </div>
-            <h3 style={{ color: '#0f172a', margin: '0 0 8px 0', fontSize: '20px' }}>
-              {lang === 'bn' ? 'অর্ডার গ্রহণ করা হয়েছে!' : 'Order Placed Successfully!'}
-            </h3>
-            <p style={{ color: '#64748b', fontSize: '14px', lineHeight: '1.5', margin: '0 0 16px 0' }}>
-              {lang === 'bn' 
-                ? 'ধন্যবাদ! ইউসুফ এন্টারপ্রাইজ থেকে খুব শীঘ্রই আপনার মোবাইলে কল দিয়ে অর্ডার কনফার্ম করা হবে।'
-                : 'Thank you! Yousuf Enterprise will call your mobile shortly to confirm the order.'}
-            </p>
-            <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', fontSize: '14px', color: '#334155', marginBottom: '24px' }}>
-              ট্র্যাকিং নম্বর: <strong>#{orderSuccess}</strong>
+            <h3 className="text-xl font-extrabold text-ink">{t.orderSuccess}</h3>
+            <p className="mt-2 text-sm leading-relaxed text-stone-500">{t.orderSuccessBody}</p>
+            <div className="mt-4 w-full rounded-2xl bg-sand px-4 py-3 text-sm text-stone-700">
+              {t.tracking}: <strong>#{orderSuccess}</strong>
             </div>
             <button
+              type="button"
               onClick={handleClose}
-              style={{
-                width: '100%',
-                padding: '12px',
-                background: '#0f172a',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
+              className="mt-6 h-12 w-full rounded-2xl bg-ink text-sm font-bold text-white transition-all duration-200"
             >
-              {lang === 'bn' ? 'ঠিক আছে' : 'Got it'}
+              {t.gotIt}
             </button>
           </div>
         ) : (
-          <>
-            {/* Item List */}
-            <div style={{ flexGrow: 1, overflowY: 'auto', marginBottom: '12px', paddingRight: '4px' }}>
+          <form onSubmit={handleCheckout} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               {cartItems.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#64748b', marginTop: '60px' }}>
-                  {lang === 'bn' ? 'কার্টটি খালি রয়েছে' : 'Your cart is empty'}
-                </p>
+                <EmptyState icon="🛒" title={t.cartEmpty} body={t.cartEmptyBody} />
               ) : (
-                cartItems.map((item) => (
-                  <div key={item.key} style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '10px 0',
-                    borderBottom: '1px solid #f1f5f9'
-                  }}>
-                    <div style={{ maxWidth: '60%' }}>
-                      <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#0f172a' }}>{item.title}</h4>
-                      <span style={{ fontSize: '13px', color: '#64748b' }}>৳{item.unitPrice} / পিস</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => updateQuantity(item.key, parseInt(e.target.value) || 1)}
-                        style={{ width: '55px', padding: '6px 4px', textAlign: 'center', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-                      />
-                      <button
-                        onClick={() => removeFromCart(item.key)}
-                        style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '18px' }}
-                      >
-                        🗑
-                      </button>
-                    </div>
-                  </div>
-                ))
+                <ul className="divide-y divide-stone-100">
+                  {cartItems.map((item) => (
+                    <li key={item.key} className="flex items-center gap-3 py-3">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="truncate text-sm font-bold text-ink">{item.title}</h4>
+                        <p className="text-xs text-stone-500">৳{item.unitPrice} {t.perPiece}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-stone-200 text-lg transition-all duration-200 hover:bg-sand"
+                          onClick={() => updateQuantity(item.key, item.quantity - 1)}
+                          aria-label="-"
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center text-sm font-bold">{item.quantity}</span>
+                        <button
+                          type="button"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-stone-200 text-lg transition-all duration-200 hover:bg-sand"
+                          onClick={() => updateQuantity(item.key, item.quantity + 1)}
+                          aria-label="+"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-red-500 transition-all duration-200 hover:bg-red-50"
+                          onClick={() => removeFromCart(item.key)}
+                          aria-label="remove"
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
 
-            {/* Bottom Form */}
             {cartItems.length > 0 && (
-              <div style={{ borderTop: '2px solid #f1f5f9', paddingTop: '12px' }}>
-                <div style={{ marginBottom: '10px' }}>
-                  <input
-                    type="text"
-                    placeholder={lang === 'bn' ? 'দোকানের নাম / মার্কেট' : 'Shop / Market Name'}
-                    value={customerShop}
-                    onChange={(e) => setCustomerShop(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '6px', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                  <input
-                    type="text"
-                    placeholder={lang === 'bn' ? 'আপনার নাম' : 'Your Name'}
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '6px', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                  <input
-                    type="tel"
-                    placeholder={lang === 'bn' ? 'মোবাইল নম্বর (আবশ্যক)*' : 'Mobile Number (Required)*'}
-                    value={customerPhone}
-                    required
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '6px', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                  <input
-                    type="text"
-                    placeholder={lang === 'bn' ? 'ঠিকানা / জেলা' : 'Delivery Address / District'}
-                    value={customerAddress}
-                    onChange={(e) => setCustomerAddress(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '8px', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-
-                  {/* Payment Method Selection */}
-                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>
-                    {lang === 'bn' ? 'পেমেন্ট পদ্ধতি বেছে নিন:' : 'Payment Method:'}
-                  </label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff', boxSizing: 'border-box' }}
-                  >
-                    <option value="cod">{lang === 'bn' ? '💵 ক্যাশ অন ডেলিভারি (Cash on Delivery)' : '💵 Cash on Delivery'}</option>
-                    <option value="bkash">{lang === 'bn' ? '📱 বিকাশ পেমেন্ট (bKash)' : '📱 bKash'}</option>
-                    <option value="nagad">{lang === 'bn' ? '📱 নগদ পেমেন্ট (Nagad)' : '📱 Nagad'}</option>
-                    <option value="bank">{lang === 'bn' ? '🏦 ব্যাংক ডিপোজিট (Bank Transfer)' : '🏦 Bank Transfer'}</option>
-                  </select>
+              <div className="border-t border-stone-100 px-5 py-4">
+                <div className="grid gap-2">
+                  <input className={fieldClass} placeholder={t.shopNameField} value={customerShop} onChange={(e) => setCustomerShop(e.target.value)} />
+                  <input className={fieldClass} placeholder={t.yourName} value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                  <input className={fieldClass} type="tel" required placeholder={t.phoneRequired} value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                  <input className={fieldClass} placeholder={t.address} value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontWeight: '600', color: '#0f172a' }}>{lang === 'bn' ? 'মোট বিল:' : 'Total:'}</span>
-                  <span style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>৳{totalAmount}</span>
+                <p className="mb-2 mt-4 text-xs font-bold uppercase tracking-wide text-stone-500">{t.paymentMethod}</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {METHODS.map((method) => {
+                    const active = paymentMethod === method.id;
+                    return (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setPaymentMethod(method.id)}
+                        className={`min-h-11 rounded-xl border px-2 py-2 text-center text-xs font-bold transition-all duration-200 ${
+                          active ? 'border-ink bg-ink text-white' : 'border-stone-200 bg-white text-ink hover:border-stone-300'
+                        }`}
+                      >
+                        <span className="block text-base">{method.icon}</span>
+                        {paymentMethodLabel(method.id, lang)}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {showPrepaid && (
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-stone-700">
+                    {paymentMethod === 'bank' ? (
+                      <div className="space-y-1">
+                        <p className="font-bold text-ink">{t.bank}</p>
+                        <p>{t.accountName}: {PAYMENT_ACCOUNTS.bank.accountName}</p>
+                        <p>{PAYMENT_ACCOUNTS.bank.branch}</p>
+                        {PAYMENT_ACCOUNTS.bank.accountNumber ? (
+                          <p className="font-mono font-bold">{PAYMENT_ACCOUNTS.bank.accountNumber}</p>
+                        ) : (
+                          <p>{t.bankHint} <strong>{PAYMENT_ACCOUNTS.bank.confirmPhone}</strong></p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="font-bold text-ink">{t.bkashSendTo}</p>
+                        <p className="font-mono text-base font-extrabold text-ink">{PAYMENT_ACCOUNTS.bkash.number}</p>
+                        <p>{PAYMENT_ACCOUNTS.bkash.name} · {PAYMENT_ACCOUNTS.bkash.type}</p>
+                        <p>{t.sendMoney}</p>
+                      </div>
+                    )}
+                    <label className="mt-3 block text-xs font-bold text-stone-600">{t.trxId}</label>
+                    <input
+                      className={`${fieldClass} mt-1`}
+                      value={transactionId}
+                      onChange={(e) => setTransactionId(e.target.value)}
+                      placeholder={t.trxPlaceholder}
+                      required
+                    />
+                    <label className="mt-2 block text-xs font-bold text-stone-600">{t.receiptRef}</label>
+                    <input
+                      className={`${fieldClass} mt-1`}
+                      value={paymentReference}
+                      onChange={(e) => setPaymentReference(e.target.value)}
+                      placeholder={t.receiptPlaceholder}
+                    />
+                  </div>
+                )}
+
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-ink">{t.total}</span>
+                  <span className="text-xl font-extrabold text-ink">৳{totalAmount.toLocaleString()}</span>
                 </div>
 
                 <button
-                  onClick={handleCheckout}
+                  type="submit"
                   disabled={submitting}
-                  style={{
-                    width: '100%',
-                    padding: '13px',
-                    background: submitting ? '#94a3b8' : '#0f172a',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontWeight: '700',
-                    fontSize: '14px',
-                    cursor: submitting ? 'not-allowed' : 'pointer',
-                    marginBottom: '6px'
-                  }}
+                  className="mt-3 h-12 w-full rounded-2xl bg-ink text-sm font-bold text-white transition-all duration-200 disabled:cursor-not-allowed disabled:bg-stone-400"
                 >
-                  {submitting ? (lang === 'bn' ? 'অর্ডার জমা হচ্ছে...' : 'Submitting...') : (lang === 'bn' ? '✓ সরাসরি অর্ডার কনফার্ম করুন' : '✓ Confirm Wholesale Order')}
+                  {submitting ? t.submitting : t.confirmOrder}
                 </button>
-
                 <button
+                  type="button"
                   onClick={clearCart}
-                  style={{ width: '100%', padding: '4px', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '12px' }}
+                  className="mt-1 h-11 w-full text-xs font-semibold text-stone-500 transition-all duration-200"
                 >
-                  {lang === 'bn' ? 'কার্ট খালি করুন' : 'Clear Cart'}
+                  {t.clearCart}
                 </button>
               </div>
             )}
-          </>
+          </form>
         )}
-      </div>
+      </aside>
     </div>
   );
 }

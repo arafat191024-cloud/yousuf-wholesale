@@ -1,15 +1,42 @@
-import React, { useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { supabase } from '../../lib/supabaseClient';
+import { useLanguage } from '../../context/LanguageContext';
 
 const ALLOWED_ADMIN_EMAIL = 'ahariyan173@gmail.com';
 
 export default function AdminLogin() {
+  const { lang, setLang } = useLanguage();
   const [email, setEmail] = useState('ahariyan173@gmail.com');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const navigate = useNavigate();
+
+  const copy = lang === 'bn'
+    ? {
+        title: 'অ্যাডমিন লগইন',
+        subtitle: 'ইউসুফ এন্টারপ্রাইজ ম্যানেজমেন্ট',
+        email: 'অ্যাডমিন ইমেইল',
+        password: 'পাসওয়ার্ড',
+        placeholder: 'আপনার গোপন পাসওয়ার্ড',
+        submit: 'লগইন করুন',
+        loading: 'লগইন হচ্ছে...',
+        denied: 'দুঃখিত! এই ইমেইলের অ্যাডমিন অ্যাক্সেস নেই।',
+        badPassword: 'ভুল পাসওয়ার্ড দেওয়া হয়েছে! আবার চেষ্টা করুন।',
+      }
+    : {
+        title: 'Admin login',
+        subtitle: 'Yousuf Enterprise management',
+        email: 'Admin email',
+        password: 'Password',
+        placeholder: 'Your password',
+        submit: 'Log in',
+        loading: 'Signing in...',
+        denied: 'This email does not have admin access.',
+        badPassword: 'Wrong password. Try again.',
+      };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -17,106 +44,73 @@ export default function AdminLogin() {
     setErrorMsg('');
 
     if (email.trim().toLowerCase() !== ALLOWED_ADMIN_EMAIL) {
-      setErrorMsg('দুঃখিত! এই ইমেইলের অ্যাডমিন অ্যাক্সেস নেই।');
+      setErrorMsg(copy.denied);
+      toast.error(copy.denied);
       setLoading(false);
       return;
     }
 
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
-      password: password.trim()
+      password: password.trim(),
     });
 
     if (error) {
-      setErrorMsg('ভুল পাসওয়ার্ড দেওয়া হয়েছে! আবার চেষ্টা করুন।');
+      setErrorMsg(copy.badPassword);
+      toast.error(copy.badPassword);
     } else {
       navigate('/admin/orders');
     }
     setLoading(false);
   };
 
+  const field = 'h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none transition-all duration-200 focus:border-ink';
+
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#f8fafc',
-      padding: '16px',
-      fontFamily: 'system-ui, sans-serif'
-    }}>
-      <div style={{
-        width: '100%',
-        maxWidth: '380px',
-        backgroundColor: '#ffffff',
-        padding: '28px',
-        borderRadius: '12px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-        border: '1px solid #e2e8f0'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-          <h2 style={{ margin: '0 0 6px 0', color: '#0f172a', fontSize: '20px' }}>🔒 অ্যাডমিন লগইন</h2>
-          <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>ইউসুফ এন্টারপ্রাইজ ম্যানেজমেন্ট</p>
+    <div className="flex min-h-screen items-center justify-center bg-paper px-4">
+      <div className="w-full max-w-sm rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-extrabold text-ink">{copy.title}</h1>
+            <p className="mt-1 text-sm text-stone-500">{copy.subtitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLang(lang === 'bn' ? 'en' : 'bn')}
+            className="inline-flex h-11 items-center rounded-full border border-stone-200 px-3 text-xs font-bold transition-all duration-200 hover:bg-sand"
+          >
+            {lang === 'bn' ? 'English' : 'বাংলা'}
+          </button>
         </div>
 
         {errorMsg && (
-          <div style={{
-            backgroundColor: '#fef2f2',
-            color: '#b91c1c',
-            padding: '10px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            marginBottom: '14px',
-            border: '1px solid #fca5a5'
-          }}>
+          <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
             {errorMsg}
-          </div>
+          </p>
         )}
 
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: '14px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
-              অ্যাডমিন ইমেইল
-            </label>
+        <form onSubmit={handleLogin} className="flex flex-col gap-3">
+          <label className="text-xs font-bold text-stone-600">
+            {copy.email}
+            <input className={`${field} mt-1`} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label className="text-xs font-bold text-stone-600">
+            {copy.password}
             <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '18px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
-              পাসওয়ার্ড
-            </label>
-            <input
+              className={`${field} mt-1`}
               type="password"
               required
-              placeholder="আপনার গোপন পাসওয়ার্ড"
+              placeholder={copy.placeholder}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
             />
-          </div>
-
+          </label>
           <button
             type="submit"
             disabled={loading}
-            style={{
-              width: '100%',
-              padding: '11px',
-              backgroundColor: loading ? '#94a3b8' : '#0f172a',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '6px',
-              fontWeight: '700',
-              fontSize: '14px',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
+            className="mt-2 h-12 rounded-2xl bg-ink text-sm font-bold text-white transition-all duration-200 disabled:cursor-not-allowed disabled:bg-stone-400"
           >
-            {loading ? 'লগইন হচ্ছে...' : 'লগইন করুন'}
+            {loading ? copy.loading : copy.submit}
           </button>
         </form>
       </div>
