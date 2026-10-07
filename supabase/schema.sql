@@ -97,6 +97,7 @@ create table if not exists public.orders (
   payment_method text, -- cod | bkash | bank
   payment_status text not null default 'pending', -- pending | verified | failed
   transaction_id text,
+  sender_number text,
   payment_reference text,
   items jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()

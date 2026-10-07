@@ -4,13 +4,15 @@ import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
 import { EmptyState } from '../../components/EmptyState';
+import { BackButton } from '../../components/BackButton';
+import { LanguageToggle } from '../../components/LanguageToggle';
 
 const copy = {
   bn: {
-    title: 'পণ্য ও স্টক',
+    title: 'পণ্য ও মজুদ',
     total: 'মোট পণ্য',
-    orders: 'অর্ডার ড্যাশবোর্ড',
-    refresh: 'রিফ্রেশ',
+    orders: 'অর্ডার ব্যবস্থাপনা',
+    refresh: 'হালনাগাদ',
     addTitle: 'নতুন পণ্য যোগ করুন',
     name: 'পণ্যের নাম',
     category: 'ক্যাটাগরি',
@@ -24,8 +26,8 @@ const copy = {
     required: 'পণ্যের নাম, দাম এবং ক্যাটাগরি দিন।',
     added: 'পণ্য যোগ হয়েছে',
     addError: 'পণ্য যোগ হয়নি',
-    stockError: 'স্টক আপডেট হয়নি',
-    live: 'লাইভ স্টক ও ভিজিবিলিটি',
+    stockError: 'মজুদ হালনাগাদ হয়নি',
+    live: 'বর্তমান মজুদ ও দৃশ্যমানতা',
     product: 'পণ্য',
     rate: 'পাইকারি দর',
     stockStatus: 'স্টক',
@@ -33,7 +35,7 @@ const copy = {
     status: 'অবস্থা',
     inStock: 'স্টকে আছে',
     out: 'স্টক আউট',
-    active: 'অ্যাকটিভ',
+    active: 'দেখা যাচ্ছে',
     hidden: 'লুকানো',
     empty: 'কোনো পণ্য পাওয়া যায়নি',
     pcs: 'পিস',
@@ -101,7 +103,7 @@ function StockActions({ onAdjust }) {
 }
 
 export default function AdminProducts() {
-  const { lang, setLang } = useLanguage();
+  const { lang } = useLanguage();
   const t = copy[lang] || copy.bn;
 
   const [products, setProducts] = useState([]);
@@ -161,7 +163,7 @@ export default function AdminProducts() {
 
     if (!error) {
       setProducts(products.map((p) => (p.id === productId ? { ...p, is_active: !currentStatus } : p)));
-      toast.success(lang === 'bn' ? 'ভিজিবিলিটি আপডেট হয়েছে' : 'Visibility updated');
+      toast.success(lang === 'bn' ? 'দৃশ্যমানতা হালনাগাদ হয়েছে' : 'Visibility updated');
     } else {
       toast.error(error.message);
     }
@@ -219,8 +221,9 @@ export default function AdminProducts() {
   return (
     <div className="min-h-screen bg-paper px-4 py-6">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-stone-200 bg-white px-5 py-4 shadow-sm">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm">
           <div>
+            <BackButton fallback="/admin/orders" className="mb-3" />
             <h1 className="text-xl font-extrabold text-ink sm:text-2xl">{t.title}</h1>
             <p className="mt-1 text-sm text-stone-500">
               {t.total}: <strong>{products.length}</strong>
@@ -228,9 +231,7 @@ export default function AdminProducts() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/admin/orders" className={actionBtn}>{t.orders}</Link>
-            <button type="button" onClick={() => setLang(lang === 'bn' ? 'en' : 'bn')} className={actionBtn}>
-              {lang === 'bn' ? 'English' : 'বাংলা'}
-            </button>
+            <LanguageToggle />
             <button
               type="button"
               onClick={fetchData}
@@ -249,7 +250,7 @@ export default function AdminProducts() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block text-xs font-bold text-stone-600">
               {t.name}
-              <input className={`${fieldClass} mt-1`} required value={name} onChange={(e) => setName(e.target.value)} placeholder="Heavy Duty Castor Wheel" />
+              <input className={`${fieldClass} mt-1`} required value={name} onChange={(e) => setName(e.target.value)} placeholder={lang === 'bn' ? 'হেভি ডিউটি চাকা' : 'Heavy duty castor wheel'} />
             </label>
             <label className="block text-xs font-bold text-stone-600">
               {t.category}
@@ -314,7 +315,7 @@ export default function AdminProducts() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h3 className="font-extrabold text-ink">{p.name}</h3>
-                          <p className="mt-1 text-xs text-stone-500">{p.categories?.name || 'Hardware'} · {p.product_code || 'WHOLESALE'}</p>
+                          <p className="mt-1 text-xs text-stone-500">{p.categories?.name || (lang === 'bn' ? 'হার্ডওয়্যার' : 'Hardware')} · {p.product_code || (lang === 'bn' ? 'পাইকারি' : 'Wholesale')}</p>
                         </div>
                         <p className="text-lg font-extrabold text-ink">৳{p.price}</p>
                       </div>
@@ -355,10 +356,10 @@ export default function AdminProducts() {
                       return (
                         <tr key={p.id} className="border-t border-stone-100">
                           <td className="px-5 py-3 font-bold text-ink">{p.name}</td>
-                          <td className="px-3 py-3 text-stone-500">{p.categories?.name || 'Hardware'}</td>
+                          <td className="px-3 py-3 text-stone-500">{p.categories?.name || (lang === 'bn' ? 'হার্ডওয়্যার' : 'Hardware')}</td>
                           <td className="px-3 py-3">
                             <span className="rounded-md bg-stone-100 px-2 py-1 text-[11px] font-bold text-stone-600">
-                              {p.product_code || 'WHOLESALE'}
+                              {p.product_code || (lang === 'bn' ? 'পাইকারি' : 'Wholesale')}
                             </span>
                           </td>
                           <td className="px-3 py-3 text-right font-extrabold">৳{p.price}</td>

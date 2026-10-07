@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
+import { BackButton } from '../../components/BackButton';
+import { LanguageToggle } from '../../components/LanguageToggle';
+import { orderStatusLabel } from '../../lib/format';
 import {
   isPaymentFailed,
   isPaymentVerified,
@@ -11,7 +14,7 @@ import {
 } from '../../lib/paymentConfig';
 
 export default function AdminOrders() {
-  const { lang, setLang } = useLanguage();
+  const { lang } = useLanguage();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('all');
@@ -22,78 +25,104 @@ export default function AdminOrders() {
 
   const labels = {
     bn: {
-      title: 'পাইকারি অর্ডার ড্যাশবোর্ড (Yousuf Enterprise)',
+      title: 'পাইকারি অর্ডার ব্যবস্থাপনা',
       totalOrders: 'মোট অর্ডার:',
-      refresh: '🔄 রিফ্রেশ',
-      searchPlaceholder: 'দোকানের নাম, ফোন, মেমো বা TrxID...',
-      filterAll: 'সবগুলো',
-      filterPending: 'অপেক্ষমান',
+      refresh: 'হালনাগাদ',
+      searchPlaceholder: 'দোকান, ফোন, অর্ডার বা লেনদেন নম্বর',
+      filterAll: 'সব',
+      filterPending: 'অপেক্ষমাণ',
       filterApproved: 'অনুমোদিত',
-      filterDelivered: 'ডেলিভারড',
+      filterDelivered: 'পৌঁছেছে',
       filterCancelled: 'বাতিল',
-      noOrders: 'কোনো অর্ডার পাওয়া যায়নি।',
-      dailySale: 'আজকের বিক্রি (Daily)',
-      monthlySale: 'চলতি মাসের বিক্রি (Monthly)',
-      cashCollection: 'ক্যাশ কালেকশন (Paid)',
-      totalSale: 'সর্বমোট বিক্রি (Lifetime)',
-      customer: 'ক্রেতার বিবরণ',
-      call: '📞 কল দিন',
-      whatsapp: '💬 WhatsApp',
-      print: '🖨 চালান প্রিন্ট',
-      edit: '✏️ এডিট',
-      editLocked: '🔒 লকড (ডেলিভারড)',
-      save: 'সংরক্ষণ করুন',
-      close: 'বন্ধ করুন',
-      paymentMethod: 'পেমেন্ট মেথড',
-      paymentStatus: 'পেমেন্ট স্ট্যাটাস',
-      markPaid: '✓ Paid / Verified',
-      markUnpaid: '⊘ Unpaid',
-      markFailed: 'Failed',
-      stockStatus: 'লাইভ স্টক (অ্যাডমিন)',
+      noOrders: 'কোনো অর্ডার পাওয়া যায়নি।',
+      dailySale: 'আজকের বিক্রি',
+      monthlySale: 'এই মাসের বিক্রি',
+      cashCollection: 'জমা টাকা',
+      totalSale: 'মোট বিক্রি',
+      customer: 'ক্রেতার তথ্য',
+      call: 'কল',
+      whatsapp: 'হোয়াটসঅ্যাপ',
+      print: 'চালান ছাপুন',
+      edit: 'সম্পাদনা',
+      editLocked: 'সম্পাদনা বন্ধ',
+      save: 'সংরক্ষণ',
+      close: 'বন্ধ',
+      paymentMethod: 'পেমেন্ট পদ্ধতি',
+      paymentStatus: 'পেমেন্ট অবস্থা',
+      markPaid: 'পরিশোধিত চিহ্নিত করুন',
+      markUnpaid: 'অপরিশোধিত করুন',
+      paidLabel: 'পরিশোধিত',
+      unpaidLabel: 'অপরিশোধিত',
+      markFailed: 'ব্যর্থ',
+      stockStatus: 'বর্তমান মজুদ',
       inStock: 'স্টকে আছে',
-      stockOut: '⚠️ স্টক সংকট / আউট',
-      trxId: 'TrxID',
+      stockOut: 'স্টক নেই',
+      trxId: 'লেনদেন নম্বর',
       copy: 'কপি',
-      copied: 'TrxID কপি হয়েছে',
-      receipt: 'রসিদ রেফারেন্স',
-      products: 'পণ্য ও স্টক',
+      copied: 'কপি হয়েছে',
+      receipt: 'রসিদ নম্বর',
+      products: 'পণ্য ও মজুদ',
+      sender: 'প্রেরকের নম্বর',
+      shop: 'দোকান',
+      deliveredWarn: 'এই অর্ডার ইতিমধ্যে পৌঁছে গেছে। অবস্থা বদলাতে চান?',
+      cancelWarn: 'এই অর্ডার বাতিল করতে চান?',
+      deliveredLock: 'পৌঁছে যাওয়া অর্ডার সম্পাদনা করা যায় না।',
+      payUpdated: 'পেমেন্ট অবস্থা হালনাগাদ হয়েছে',
+      updateFailed: 'হালনাগাদ হয়নি',
+      productCol: 'পণ্য',
+      rateCol: 'দর',
+      qtyCol: 'পরিমাণ',
+      totalCol: 'মোট',
     },
     en: {
-      title: 'Wholesale Orders Dashboard (Yousuf Enterprise)',
-      totalOrders: 'Total Orders:',
-      refresh: '🔄 Refresh',
-      searchPlaceholder: 'Search by shop, phone, memo, TrxID...',
+      title: 'Wholesale order desk',
+      totalOrders: 'Total orders:',
+      refresh: 'Refresh',
+      searchPlaceholder: 'Shop, phone, order or transaction ID',
       filterAll: 'All',
       filterPending: 'Pending',
       filterApproved: 'Approved',
       filterDelivered: 'Delivered',
       filterCancelled: 'Cancelled',
       noOrders: 'No orders found.',
-      dailySale: 'Daily Sales',
-      monthlySale: 'Monthly Sales',
-      cashCollection: 'Cash Collected (Paid)',
-      totalSale: 'Lifetime Sales',
-      customer: 'Customer Info',
-      call: '📞 Call',
-      whatsapp: '💬 WhatsApp',
-      print: '🖨 Print Memo',
-      edit: '✏️ Edit',
-      editLocked: '🔒 Locked (Delivered)',
-      save: 'Save Changes',
+      dailySale: 'Sales today',
+      monthlySale: 'Sales this month',
+      cashCollection: 'Collected',
+      totalSale: 'All-time sales',
+      customer: 'Customer',
+      call: 'Call',
+      whatsapp: 'WhatsApp',
+      print: 'Print memo',
+      edit: 'Edit',
+      editLocked: 'Editing locked',
+      save: 'Save',
       close: 'Close',
-      paymentMethod: 'Payment Method',
-      paymentStatus: 'Payment Status',
-      markPaid: '✓ Paid / Verified',
-      markUnpaid: '⊘ Unpaid',
+      paymentMethod: 'Payment method',
+      paymentStatus: 'Payment status',
+      markPaid: 'Mark paid',
+      markUnpaid: 'Mark unpaid',
+      paidLabel: 'Paid',
+      unpaidLabel: 'Unpaid',
       markFailed: 'Failed',
-      stockStatus: 'Live Stock (Admin)',
-      inStock: 'In Stock',
-      stockOut: '⚠️ Out of Stock',
-      trxId: 'TrxID',
+      stockStatus: 'Live stock',
+      inStock: 'In stock',
+      stockOut: 'Out of stock',
+      trxId: 'Transaction ID',
       copy: 'Copy',
-      copied: 'TrxID copied',
+      copied: 'Copied',
       receipt: 'Receipt reference',
-      products: 'Products & stock',
+      products: 'Products and stock',
+      sender: 'Sender number',
+      shop: 'Shop',
+      deliveredWarn: 'This order is already delivered. Change the status?',
+      cancelWarn: 'Cancel this order?',
+      deliveredLock: 'Delivered orders cannot be edited.',
+      payUpdated: 'Payment status updated',
+      updateFailed: 'Update failed',
+      productCol: 'Product',
+      rateCol: 'Rate',
+      qtyCol: 'Qty',
+      totalCol: 'Total',
     }
   };
 
@@ -137,20 +166,12 @@ export default function AdminOrders() {
     if (!targetOrder) return;
 
     if (targetOrder.status === 'delivered' && fields.status !== undefined && fields.status !== 'delivered') {
-      const confirmRevert = window.confirm(
-        lang === 'bn'
-          ? 'এই অর্ডারটি ইতিমধ্যে Delivered করা হয়েছে। আপনি কি নিশ্চিত যে এর স্ট্যাটাস পরিবর্তন করতে চান?'
-          : 'This order is already Delivered. Are you sure you want to change its status?'
-      );
+      const confirmRevert = window.confirm(t.deliveredWarn);
       if (!confirmRevert) return;
     }
 
     if (fields.status === 'cancelled') {
-      const confirmCancel = window.confirm(
-        lang === 'bn'
-          ? `আপনি কি নিশ্চিত যে অর্ডার #${targetOrder.order_number || ''} বাতিল (Cancel) করতে চান?`
-          : `Are you sure you want to cancel order #${targetOrder.order_number || ''}?`
-      );
+      const confirmCancel = window.confirm(`${t.cancelWarn} #${targetOrder.order_number || ''}`);
       if (!confirmCancel) return;
     }
 
@@ -162,10 +183,11 @@ export default function AdminOrders() {
     if (!error) {
       setOrders(orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)));
       if (fields.payment_status) {
-        toast.success(lang === 'bn' ? 'পেমেন্ট স্ট্যাটাস আপডেট হয়েছে' : 'Payment status updated');
+        toast.success(t.payUpdated);
       }
     } else {
-      toast.error((lang === 'bn' ? 'আপডেট হয়নি: ' : 'Update failed: ') + error.message);
+      toast.error(t.updateFailed);
+      console.error(error);
     }
   };
 
@@ -229,7 +251,8 @@ export default function AdminOrders() {
       (o.customer_name && o.customer_name.toLowerCase().includes(query)) ||
       (o.phone && o.phone.includes(query)) ||
       (o.order_number && o.order_number.toLowerCase().includes(query)) ||
-      (o.transaction_id && o.transaction_id.toLowerCase().includes(query));
+      (o.transaction_id && o.transaction_id.toLowerCase().includes(query)) ||
+      (o.sender_number && o.sender_number.includes(query));
 
     return matchesFilter && matchesSearch;
   });
@@ -279,7 +302,8 @@ export default function AdminOrders() {
               <strong>মেমো নং:</strong> #${order.order_number || String(order.id).slice(0, 8)}<br/>
               <strong>তারিখ:</strong> ${new Date(order.created_at).toLocaleDateString('bn-BD')}<br/>
               <strong>পেমেন্ট:</strong> ${order.payment_method?.toUpperCase()} (${paidLabel})<br/>
-              <strong>TrxID:</strong> ${order.transaction_id || '—'}<br/>
+              <strong>${t.trxId}:</strong> ${order.transaction_id || '—'}<br/>
+              <strong>${t.sender}:</strong> ${order.sender_number || '—'}<br/>
               <strong>অবস্থা:</strong> ${order.status?.toUpperCase()}
             </div>
           </div>
@@ -316,11 +340,7 @@ export default function AdminOrders() {
 
   const handleOpenEdit = (order) => {
     if (order.status === 'delivered') {
-      alert(
-        lang === 'bn'
-          ? 'ডেলিভারড (Delivered) হওয়া অর্ডার সম্পাদনা (Edit) করা সম্ভব নয়।'
-          : 'Delivered orders cannot be edited.'
-      );
+      alert(t.deliveredLock);
       return;
     }
     setEditingOrder({
@@ -339,6 +359,7 @@ export default function AdminOrders() {
       payment_method: editingOrder.payment_method,
       payment_status: normalizePaymentStatus(editingOrder.payment_status),
       transaction_id: editingOrder.transaction_id || null,
+      sender_number: editingOrder.sender_number || null,
       payment_reference: editingOrder.payment_reference || null,
       items: editingOrder.items,
       total_amount: recalculatedTotal
@@ -352,8 +373,9 @@ export default function AdminOrders() {
   return (
     <div className="min-h-screen bg-paper px-4 py-6">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-stone-200 bg-white px-5 py-4 shadow-sm">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm">
           <div>
+            <BackButton fallback="/" className="mb-3" />
             <h1 className="text-xl font-extrabold text-ink sm:text-2xl">{t.title}</h1>
             <p className="mt-1 text-sm text-stone-500">
               {t.totalOrders} <strong>{orders.length}</strong>
@@ -361,13 +383,7 @@ export default function AdminOrders() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/admin/products" className={actionBtn}>{t.products}</Link>
-            <button
-              type="button"
-              onClick={() => setLang(lang === 'bn' ? 'en' : 'bn')}
-              className={actionBtn}
-            >
-              {lang === 'bn' ? 'English' : 'বাংলা'}
-            </button>
+            <LanguageToggle />
             <button type="button" onClick={fetchData} className="inline-flex min-h-11 items-center rounded-xl bg-ink px-4 text-xs font-bold text-white transition-all duration-200">
               {t.refresh}
             </button>
@@ -445,10 +461,10 @@ export default function AdminOrders() {
                           <span className="text-sm font-extrabold text-teal-700">#{order.order_number || String(order.id).slice(0, 8)}</span>
                           <span className="text-xs text-stone-500">{new Date(order.created_at).toLocaleDateString('bn-BD')}</span>
                           <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${verified ? 'bg-emerald-100 text-emerald-800' : failed ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'}`}>
-                            {verified ? 'PAID / VERIFIED' : failed ? 'FAILED' : 'UNPAID'} · {paymentMethodLabel(order.payment_method, lang)}
+                            {verified ? t.paidLabel : failed ? t.markFailed : t.unpaidLabel} · {paymentMethodLabel(order.payment_method, lang)}
                           </span>
-                          <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-extrabold uppercase text-stone-700">
-                            {order.status}
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-700">
+                            {orderStatusLabel(order.status, lang)}
                           </span>
                         </div>
                         <h3 className="mt-2 text-lg font-extrabold text-ink">{order.shop_name || order.customer_name}</h3>
@@ -484,6 +500,20 @@ export default function AdminOrders() {
                           </button>
                         )}
                       </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-bold text-ink">
+                          {t.sender}: {order.sender_number || '—'}
+                        </span>
+                        {order.sender_number && (
+                          <button
+                            type="button"
+                            onClick={() => copyTrx(order.sender_number)}
+                            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-ink"
+                          >
+                            {t.copy}
+                          </button>
+                        )}
+                      </div>
                       {order.payment_reference && (
                         <p className="mt-1 text-xs text-stone-600">{t.receipt}: {order.payment_reference}</p>
                       )}
@@ -510,9 +540,9 @@ export default function AdminOrders() {
                           key={st}
                           type="button"
                           onClick={() => updateOrderField(order.id, { status: st })}
-                          className={`min-h-11 rounded-xl px-3 text-xs font-bold capitalize transition-all duration-200 ${order.status === st ? 'bg-ink text-white' : 'border border-stone-200 bg-white text-stone-700'}`}
+                          className={`min-h-11 rounded-xl px-3 text-xs font-bold transition-all duration-200 ${order.status === st ? 'bg-ink text-white' : 'border border-slate-200 bg-white text-slate-700'}`}
                         >
-                          {st}
+                          {orderStatusLabel(st, lang)}
                         </button>
                       ))}
                     </div>
@@ -542,11 +572,11 @@ export default function AdminOrders() {
                     <table className="hidden w-full text-left text-sm md:table">
                       <thead>
                         <tr className="bg-sand text-[11px] uppercase tracking-wide text-stone-500">
-                          <th className="px-5 py-3">{lang === 'bn' ? 'পণ্য' : 'Product'}</th>
-                          <th className="px-3 py-3 text-right">{lang === 'bn' ? 'দর' : 'Rate'}</th>
-                          <th className="px-3 py-3 text-center">{lang === 'bn' ? 'পরিমাণ' : 'Qty'}</th>
+                          <th className="px-5 py-3">{t.productCol}</th>
+                          <th className="px-3 py-3 text-right">{t.rateCol}</th>
+                          <th className="px-3 py-3 text-center">{t.qtyCol}</th>
                           <th className="px-3 py-3 text-center">{t.stockStatus}</th>
-                          <th className="px-5 py-3 text-right">{lang === 'bn' ? 'মোট' : 'Total'}</th>
+                          <th className="px-5 py-3 text-right">{t.totalCol}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -598,26 +628,32 @@ export default function AdminOrders() {
                     onChange={(e) => setEditingOrder({ ...editingOrder, payment_method: e.target.value })}
                     className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm"
                   >
-                    <option value="cod">Cash on Delivery</option>
-                    <option value="bkash">bKash</option>
-                    <option value="nagad">Nagad</option>
-                    <option value="bank">Bank Transfer</option>
+                    <option value="cod">{paymentMethodLabel('cod', lang)}</option>
+                    <option value="bkash">{paymentMethodLabel('bkash', lang)}</option>
+                    <option value="nagad">{paymentMethodLabel('nagad', lang)}</option>
+                    <option value="bank">{paymentMethodLabel('bank', lang)}</option>
                   </select>
                   <select
                     value={normalizePaymentStatus(editingOrder.payment_status)}
                     onChange={(e) => setEditingOrder({ ...editingOrder, payment_status: e.target.value })}
                     className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm"
                   >
-                    <option value="pending">Unpaid</option>
-                    <option value="verified">Paid / Verified</option>
-                    <option value="failed">Failed</option>
+                    <option value="pending">{t.markUnpaid}</option>
+                    <option value="verified">{t.markPaid}</option>
+                    <option value="failed">{t.markFailed}</option>
                   </select>
                 </div>
                 <input
                   className="h-11 rounded-xl border border-stone-200 px-3 font-mono text-sm"
-                  placeholder="TrxID"
+                  placeholder={t.trxId}
                   value={editingOrder.transaction_id || ''}
                   onChange={(e) => setEditingOrder({ ...editingOrder, transaction_id: e.target.value })}
+                />
+                <input
+                  className="h-11 rounded-xl border border-stone-200 px-3 text-sm"
+                  placeholder={t.sender}
+                  value={editingOrder.sender_number || ''}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, sender_number: e.target.value })}
                 />
                 <input
                   className="h-11 rounded-xl border border-stone-200 px-3 text-sm"

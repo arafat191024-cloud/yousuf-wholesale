@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useLanguage } from '../context/LanguageContext'
+import { formatTaka } from '../lib/format'
 
 function IconHome() {
   return (
@@ -47,8 +48,8 @@ export function BottomNav() {
   const navigate = useNavigate()
 
   const itemClass = (active) =>
-    `flex min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-all duration-200 ${
-      active ? 'text-brass' : 'text-stone-500'
+    `flex min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-all duration-200 ease-out ${
+      active ? 'text-brass' : 'text-slate-500'
     }`
 
   function goCategories() {
@@ -61,7 +62,7 @@ export function BottomNav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 backdrop-blur-md md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 shadow-[0_-8px_24px_rgb(15_23_42/0.04)] backdrop-blur-md md:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex items-stretch px-1 pt-1">
@@ -98,11 +99,11 @@ export function BottomNav() {
 }
 
 export function CheckoutFab() {
-  const { t } = useLanguage()
+  const { lang, t } = useLanguage()
   const { cartItems, totalAmount, totalCount, setIsCartOpen } = useCart()
   const location = useLocation()
 
-  if (!cartItems.length || location.pathname.startsWith('/admin')) return null
+  if (!cartItems.length || location.pathname.startsWith('/admin') || location.pathname === '/checkout') return null
 
   return (
     <div
@@ -112,11 +113,11 @@ export function CheckoutFab() {
       <button
         type="button"
         onClick={() => setIsCartOpen(true)}
-        className="flex h-12 w-full items-center justify-between rounded-2xl bg-ink px-4 text-white shadow-lg transition-all duration-200 active:scale-[0.99]"
+        className="flex h-12 w-full items-center justify-between rounded-2xl bg-ink px-4 text-white shadow-lg transition-all duration-200 ease-out active:scale-[0.99]"
       >
-        <span className="text-sm font-bold">{t.checkout}</span>
+        <span className="text-sm font-bold">{t.viewCart}</span>
         <span className="text-sm font-extrabold">
-          {totalCount} · ৳{totalAmount.toLocaleString()}
+          {totalCount} · {formatTaka(totalAmount, lang)}
         </span>
       </button>
     </div>

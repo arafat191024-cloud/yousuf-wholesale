@@ -10,8 +10,11 @@ import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { Orders } from './pages/Orders';
 import { SearchPage } from './pages/SearchPage';
+import { Checkout } from './pages/Checkout';
 
 import { CartDrawer } from './components/CartDrawer';
+import { AddedSheet } from './components/AddedSheet';
+import { ScrollManager } from './components/ScrollManager';
 import { SiteHeader } from './components/SiteHeader';
 import { BottomNav, CheckoutFab } from './components/BottomNav';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -42,7 +45,9 @@ export default function App() {
       <LanguageProvider>
         <AuthProvider>
           <CartProvider>
+            <ScrollManager />
             <CartDrawer />
+            <AddedSheet />
             <Shell>
               <Routes>
                 <Route path="/" element={<Home />} />
@@ -51,6 +56,7 @@ export default function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/orders" element={<Orders />} />
+                <Route path="/checkout" element={<Checkout />} />
 
                 <Route path="/admin/login" element={<AdminLogin />} />
                 <Route

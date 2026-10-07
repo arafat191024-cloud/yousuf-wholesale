@@ -1,6 +1,6 @@
 export function EmptyState({ icon = '📦', title, body, action }) {
   return (
-    <div className="rounded-3xl border border-stone-200 bg-white px-6 py-14 text-center shadow-sm">
+    <div className="premium-card rounded-3xl px-6 py-14 text-center">
       <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-sand text-2xl">
         {icon}
       </div>

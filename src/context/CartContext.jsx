@@ -1,12 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import toast from 'react-hot-toast';
 
 const CartContext = createContext();
-
-function addedMessage() {
-  const lang = localStorage.getItem('app_lang') || 'bn';
-  return lang === 'bn' ? 'কার্টে যোগ করা হয়েছে' : 'Item added to cart';
-}
 
 export function CartProvider({ children }) {
   const [cartItems, setCartItems] = useState(() => {
@@ -15,21 +9,29 @@ export function CartProvider({ children }) {
   });
 
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [addedOpen, setAddedOpen] = useState(false);
+  const [addedItem, setAddedItem] = useState(null);
 
   useEffect(() => {
     localStorage.setItem('wholesale_cart', JSON.stringify(cartItems));
   }, [cartItems]);
 
   const addToCart = (product, variant, quantity) => {
+    const safeQty = Math.max(1, Number(quantity) || 1);
     const itemKey = variant ? `${product.id}-${variant.id}` : `${product.id}-default`;
-    const unitPrice = variant ? variant.price : product.price;
+    const unitPrice = Number(variant ? variant.price : product.price) || 0;
     const title = variant ? `${product.name} (${variant.size})` : product.name;
+    const image = product.image_url || '';
+    const lotSize = Math.max(1, Number(product.min_wholesale_qty) || 1);
+    const size = variant?.size || '';
 
     setCartItems((prev) => {
       const existing = prev.find((item) => item.key === itemKey);
       if (existing) {
         return prev.map((item) =>
-          item.key === itemKey ? { ...item, quantity: item.quantity + quantity } : item
+          item.key === itemKey
+            ? { ...item, quantity: item.quantity + safeQty, image: item.image || image, lotSize, size: item.size || size }
+            : item
         );
       }
       return [
@@ -40,14 +42,26 @@ export function CartProvider({ children }) {
           variantId: variant ? variant.id : null,
           title,
           unitPrice,
-          quantity,
-          productCode: product.product_code || 'WHOLESALE'
-        }
+          quantity: safeQty,
+          productCode: product.product_code || '',
+          image,
+          lotSize,
+          size,
+        },
       ];
     });
 
-    toast.success(addedMessage());
-    setIsCartOpen(true);
+    setAddedItem({
+      key: itemKey,
+      title,
+      unitPrice,
+      quantity: safeQty,
+      image,
+      lotSize,
+      size,
+      productCode: product.product_code || '',
+    });
+    setAddedOpen(true);
   };
 
   const removeFromCart = (itemKey) => {
@@ -80,7 +94,10 @@ export function CartProvider({ children }) {
         totalAmount,
         totalCount,
         isCartOpen,
-        setIsCartOpen
+        setIsCartOpen,
+        addedOpen,
+        setAddedOpen,
+        addedItem,
       }}
     >
       {children}

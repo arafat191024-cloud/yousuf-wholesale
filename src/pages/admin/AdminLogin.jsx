@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
+import { BackButton } from '../../components/BackButton';
+import { LanguageToggle } from '../../components/LanguageToggle';
 
 const ALLOWED_ADMIN_EMAIL = 'ahariyan173@gmail.com';
 
 export default function AdminLogin() {
-  const { lang, setLang } = useLanguage();
+  const { lang } = useLanguage();
   const [email, setEmail] = useState('ahariyan173@gmail.com');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,14 +18,14 @@ export default function AdminLogin() {
 
   const copy = lang === 'bn'
     ? {
-        title: 'অ্যাডমিন লগইন',
-        subtitle: 'ইউসুফ এন্টারপ্রাইজ ম্যানেজমেন্ট',
-        email: 'অ্যাডমিন ইমেইল',
+        title: 'ব্যবস্থাপনায় প্রবেশ',
+        subtitle: 'ইউসুফ এন্টারপ্রাইজ',
+        email: 'ইমেইল',
         password: 'পাসওয়ার্ড',
         placeholder: 'আপনার গোপন পাসওয়ার্ড',
-        submit: 'লগইন করুন',
-        loading: 'লগইন হচ্ছে...',
-        denied: 'দুঃখিত! এই ইমেইলের অ্যাডমিন অ্যাক্সেস নেই।',
+        submit: 'প্রবেশ করুন',
+        loading: 'প্রবেশ হচ্ছে...',
+        denied: 'এই ইমেইলে ব্যবস্থাপনার অনুমতি নেই।',
         badPassword: 'ভুল পাসওয়ার্ড দেওয়া হয়েছে! আবার চেষ্টা করুন।',
       }
     : {
@@ -67,20 +69,16 @@ export default function AdminLogin() {
   const field = 'h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none transition-all duration-200 focus:border-ink';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-paper px-4">
-      <div className="w-full max-w-sm rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-paper px-4 py-8">
+      <div className="w-full max-w-sm">
+        <BackButton fallback="/" className="mb-4" />
+        <div className="premium-card rounded-3xl p-6">
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-extrabold text-ink">{copy.title}</h1>
-            <p className="mt-1 text-sm text-stone-500">{copy.subtitle}</p>
+            <p className="mt-1 text-sm text-slate-500">{copy.subtitle}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setLang(lang === 'bn' ? 'en' : 'bn')}
-            className="inline-flex h-11 items-center rounded-full border border-stone-200 px-3 text-xs font-bold transition-all duration-200 hover:bg-sand"
-          >
-            {lang === 'bn' ? 'English' : 'বাংলা'}
-          </button>
+          <LanguageToggle />
         </div>
 
         {errorMsg && (
@@ -113,6 +111,7 @@ export default function AdminLogin() {
             {loading ? copy.loading : copy.submit}
           </button>
         </form>
+        </div>
       </div>
     </div>
   );
