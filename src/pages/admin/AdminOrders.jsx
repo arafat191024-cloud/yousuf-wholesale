@@ -9,9 +9,14 @@ import { orderStatusLabel } from '../../lib/format';
 import {
   isPaymentFailed,
   isPaymentVerified,
+  needsTransactionId,
   normalizePaymentStatus,
   paymentMethodLabel,
 } from '../../lib/paymentConfig';
+
+function showPaymentDetail(method, value) {
+  return needsTransactionId(method) || Boolean(String(value || '').trim());
+}
 
 export default function AdminOrders() {
   const { lang } = useLanguage();
@@ -273,6 +278,14 @@ export default function AdminOrders() {
     const printWindow = window.open('', '_blank');
     const items = Array.isArray(order.items) ? order.items : [];
     const paidLabel = isPaymentVerified(order.payment_status) ? 'VERIFIED' : (isPaymentFailed(order.payment_status) ? 'FAILED' : 'PENDING');
+    const paymentLines = [
+      showPaymentDetail(order.payment_method, order.transaction_id)
+        ? `<strong>${t.trxId}:</strong> ${order.transaction_id || '—'}<br/>`
+        : '',
+      showPaymentDetail(order.payment_method, order.sender_number)
+        ? `<strong>${t.sender}:</strong> ${order.sender_number || '—'}<br/>`
+        : '',
+    ].join('');
     printWindow.document.write(`
       <html>
         <head>
@@ -304,9 +317,8 @@ export default function AdminOrders() {
             <div style="text-align: right;">
               <strong>মেমো নং:</strong> #${order.order_number || String(order.id).slice(0, 8)}<br/>
               <strong>তারিখ:</strong> ${new Date(order.created_at).toLocaleDateString('bn-BD')}<br/>
-              <strong>পেমেন্ট:</strong> ${order.payment_method?.toUpperCase()} (${paidLabel})<br/>
-              <strong>${t.trxId}:</strong> ${order.transaction_id || '—'}<br/>
-              <strong>${t.sender}:</strong> ${order.sender_number || '—'}<br/>
+              <strong>পেমেন্ট:</strong> ${paymentMethodLabel(order.payment_method, lang)} (${paidLabel})<br/>
+              ${paymentLines}
               <strong>অবস্থা:</strong> ${order.status?.toUpperCase()}
             </div>
           </div>
@@ -456,6 +468,8 @@ export default function AdminOrders() {
               const verified = isPaymentVerified(order.payment_status);
               const failed = isPaymentFailed(order.payment_status);
               const isDelivered = order.status === 'delivered';
+              const showTrx = showPaymentDetail(order.payment_method, order.transaction_id);
+              const showSender = showPaymentDetail(order.payment_method, order.sender_number);
 
               return (
                 <article key={order.id} className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm">
@@ -491,34 +505,38 @@ export default function AdminOrders() {
                     <div className="mt-4 rounded-2xl border border-stone-200 bg-sand p-3">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-stone-500">{t.paymentMethod}</p>
                       <p className="mt-1 text-sm font-extrabold text-ink">{paymentMethodLabel(order.payment_method, lang)}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-sm font-bold text-ink">
-                          {t.trxId}: {order.transaction_id || '—'}
-                        </span>
-                        {order.transaction_id && (
-                          <button
-                            type="button"
-                            onClick={() => copyTrx(order.transaction_id)}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-ink px-3 text-xs font-bold text-white transition-all duration-200"
-                          >
-                            {t.copy}
-                          </button>
-                        )}
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-bold text-ink">
-                          {t.sender}: {order.sender_number || '—'}
-                        </span>
-                        {order.sender_number && (
-                          <button
-                            type="button"
-                            onClick={() => copyTrx(order.sender_number)}
-                            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-ink"
-                          >
-                            {t.copy}
-                          </button>
-                        )}
-                      </div>
+                      {showTrx && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-sm font-bold text-ink">
+                            {t.trxId}: {order.transaction_id || '—'}
+                          </span>
+                          {order.transaction_id && (
+                            <button
+                              type="button"
+                              onClick={() => copyTrx(order.transaction_id)}
+                              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-ink px-3 text-xs font-bold text-white transition-all duration-200"
+                            >
+                              {t.copy}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {showSender && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-bold text-ink">
+                            {t.sender}: {order.sender_number || '—'}
+                          </span>
+                          {order.sender_number && (
+                            <button
+                              type="button"
+                              onClick={() => copyTrx(order.sender_number)}
+                              className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-ink"
+                            >
+                              {t.copy}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {order.payment_reference && (
                         <p className="mt-1 text-xs text-stone-600">{t.receipt}: {order.payment_reference}</p>
                       )}
