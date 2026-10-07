@@ -22,6 +22,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminOrders from './pages/admin/AdminOrders';
 import AdminProducts from './pages/admin/AdminProducts';
+import AdminPos from './pages/admin/AdminPos';
 
 function Shell({ children }) {
   const location = useLocation();
@@ -72,6 +73,14 @@ export default function App() {
                   element={
                     <ProtectedRoute>
                       <AdminProducts />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/pos"
+                  element={
+                    <ProtectedRoute>
+                      <AdminPos />
                     </ProtectedRoute>
                   }
                 />

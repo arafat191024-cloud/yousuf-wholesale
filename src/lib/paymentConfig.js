@@ -64,6 +64,7 @@ export function normalizePaymentStatus(status) {
 export function paymentMethodLabel(method, lang = 'bn') {
   const labels = {
     cod: { bn: 'হাতে পেয়ে পরিশোধ', en: 'Cash on Delivery' },
+    offline: { bn: 'নগদ / অফলাইন মেমো', en: 'Cash / Offline memo' },
     bkash: { bn: 'বিকাশ', en: 'bKash' },
     nagad: { bn: 'নগদ', en: 'Nagad' },
     bank: { bn: 'ব্যাংক স্থানান্তর', en: 'Bank Transfer' },

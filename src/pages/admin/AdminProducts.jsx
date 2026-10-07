@@ -30,6 +30,12 @@ const copy = {
     live: 'বর্তমান মজুদ ও দৃশ্যমানতা',
     product: 'পণ্য',
     rate: 'পাইকারি দর',
+    rateSaved: 'রেট সফলভাবে আপডেট হয়েছে',
+    rateError: 'রেট হালনাগাদ হয়নি',
+    rateInvalid: 'সঠিক দর লিখুন',
+    save: 'সংরক্ষণ',
+    cancel: 'বাতিল',
+    memo: 'নতুন মেমো',
     stockStatus: 'স্টক',
     actions: 'স্টক অ্যাডজাস্ট',
     status: 'অবস্থা',
@@ -62,6 +68,12 @@ const copy = {
     live: 'Live stock & visibility',
     product: 'Product',
     rate: 'Wholesale rate',
+    rateSaved: 'Rate updated',
+    rateError: 'Rate update failed',
+    rateInvalid: 'Enter a valid rate',
+    save: 'Save',
+    cancel: 'Cancel',
+    memo: 'New memo',
     stockStatus: 'Stock',
     actions: 'Adjust stock',
     status: 'Status',
@@ -76,6 +88,85 @@ const copy = {
 
 const fieldClass =
   'h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition-all duration-200 focus:border-ink';
+
+function RateEditor({ price, label, saveLabel, cancelLabel, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(price ?? ''));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setValue(String(price ?? ''));
+  }, [price, editing]);
+
+  async function commit() {
+    if (saving) return;
+    const next = Number(value);
+    if (!Number.isFinite(next) || next < 0) {
+      onSave(null);
+      return;
+    }
+    if (next === Number(price)) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const ok = await onSave(next);
+    setSaving(false);
+    if (ok) setEditing(false);
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="inline-flex h-11 items-center gap-1.5 rounded-xl px-2 text-base font-extrabold text-ink transition-all duration-200 ease-out hover:bg-slate-50"
+      >
+        ৳{price}
+        <span className="text-xs font-bold text-slate-400" aria-hidden="true">✎</span>
+        <span className="sr-only">{label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <input
+        autoFocus
+        type="number"
+        min="0"
+        step="1"
+        value={value}
+        aria-label={label}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        onBlur={commit}
+        className="h-11 w-24 rounded-xl border border-slate-200 bg-white px-2 text-right text-sm font-bold outline-none focus:border-ink"
+      />
+      <button
+        type="button"
+        aria-label={saveLabel}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={commit}
+        className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-600 text-sm font-bold text-white"
+      >
+        ✓
+      </button>
+      <button
+        type="button"
+        aria-label={cancelLabel}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setEditing(false)}
+        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-sm font-bold text-slate-600"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
 
 function StockActions({ onAdjust }) {
   const steps = [
@@ -140,6 +231,25 @@ export default function AdminProducts() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const savePrice = async (productId, nextPrice) => {
+    const current = products.find((item) => item.id === productId);
+    const previous = current?.price;
+    if (nextPrice == null || !Number.isFinite(nextPrice) || nextPrice < 0) {
+      toast.error(t.rateInvalid);
+      return false;
+    }
+    setProducts((rows) => rows.map((item) => (item.id === productId ? { ...item, price: nextPrice } : item)));
+    const { error } = await supabase.from('products').update({ price: nextPrice }).eq('id', productId);
+    if (error) {
+      setProducts((rows) => rows.map((item) => (item.id === productId ? { ...item, price: previous } : item)));
+      toast.error(t.rateError);
+      console.error(error);
+      return false;
+    }
+    toast.success(t.rateSaved);
+    return true;
+  };
 
   const adjustStock = async (productId, currentStock, amount) => {
     const newStock = Math.max(0, (Number(currentStock) || 0) + amount);
@@ -231,6 +341,7 @@ export default function AdminProducts() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/admin/orders" className={actionBtn}>{t.orders}</Link>
+            <Link to="/admin/pos" className={actionBtn}>{t.memo}</Link>
             <LanguageToggle />
             <button
               type="button"
@@ -317,7 +428,13 @@ export default function AdminProducts() {
                           <h3 className="font-extrabold text-ink">{p.name}</h3>
                           <p className="mt-1 text-xs text-stone-500">{p.categories?.name || (lang === 'bn' ? 'হার্ডওয়্যার' : 'Hardware')} · {p.product_code || (lang === 'bn' ? 'পাইকারি' : 'Wholesale')}</p>
                         </div>
-                        <p className="text-lg font-extrabold text-ink">৳{p.price}</p>
+                        <RateEditor
+                          price={p.price}
+                          label={t.rate}
+                          saveLabel={t.save}
+                          cancelLabel={t.cancel}
+                          onSave={(next) => savePrice(p.id, next)}
+                        />
                       </div>
                       <p className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[11px] font-extrabold ${isOut ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
                         {isOut ? `${t.out} (0)` : `${t.inStock} (${p.stock} ${t.pcs})`}
@@ -362,7 +479,15 @@ export default function AdminProducts() {
                               {p.product_code || (lang === 'bn' ? 'পাইকারি' : 'Wholesale')}
                             </span>
                           </td>
-                          <td className="px-3 py-3 text-right font-extrabold">৳{p.price}</td>
+                          <td className="px-3 py-3 text-right">
+                            <RateEditor
+                              price={p.price}
+                              label={t.rate}
+                              saveLabel={t.save}
+                              cancelLabel={t.cancel}
+                              onSave={(next) => savePrice(p.id, next)}
+                            />
+                          </td>
                           <td className="px-3 py-3 text-center">
                             <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-extrabold ${isOut ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
                               {isOut ? `${t.out} (0)` : `${t.inStock} (${p.stock} ${t.pcs})`}

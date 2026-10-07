@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { categoryCopy } from '../lib/catalog'
 
-export function CategorySwitcher({ categories, activeSlug, counts }) {
+export function CategorySwitcher({ categories, activeSlug, counts, children }) {
   const { lang, t } = useLanguage()
   const [top, setTop] = useState(72)
 
@@ -53,6 +53,7 @@ export function CategorySwitcher({ categories, activeSlug, counts }) {
           {t.allCategories}
         </Link>
       </div>
+      {children}
     </div>
   )
 }
