@@ -10,6 +10,7 @@ import { BackButton } from '../components/BackButton';
 import { CategorySwitcher } from '../components/CategorySwitcher';
 import { ProductCard } from '../components/ProductCard';
 import { collectSeries, collectSizes, matchesSeries, matchesSize } from '../lib/productMeta';
+import { useLiveStock } from '../lib/stockSync';
 
 export default function CategoryPage() {
   const { slug } = useParams();
@@ -22,6 +23,7 @@ export default function CategoryPage() {
   const [size, setSize] = useState('');
   const [series, setSeries] = useState('');
   const [showAll, setShowAll] = useState(false);
+  useLiveStock(setProducts);
 
   useEffect(() => {
     let cancelled = false;

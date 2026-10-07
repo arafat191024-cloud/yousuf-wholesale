@@ -6,6 +6,16 @@ import { useLanguage } from '../../context/LanguageContext';
 import { BackButton } from '../../components/BackButton';
 import { LanguageToggle } from '../../components/LanguageToggle';
 import { orderStatusLabel } from '../../lib/format';
+import { PaymentBreakdown } from '../../components/PaymentBreakdown';
+import { inPaymentRange, summarizePayments } from '../../lib/paymentMetrics';
+import {
+  aggregateQty,
+  broadcastStock,
+  commitManagedStock,
+  isInsufficientStock,
+  isManagedOrder,
+  stockWarning,
+} from '../../lib/stockSync';
 import {
   isPaymentFailed,
   isPaymentVerified,
@@ -24,6 +34,7 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [paymentRange, setPaymentRange] = useState('all');
   const [productsStock, setProductsStock] = useState({});
 
   const [editingOrder, setEditingOrder] = useState(null);
@@ -75,6 +86,12 @@ export default function AdminOrders() {
       deliveredLock: 'পৌঁছে যাওয়া অর্ডার সম্পাদনা করা যায় না।',
       payUpdated: 'পেমেন্ট অবস্থা হালনাগাদ হয়েছে',
       updateFailed: 'হালনাগাদ হয়নি',
+      restocked: 'অর্ডার বাতিল হয়েছে এবং স্টক ফিরে গেছে',
+      statusUpdated: 'অর্ডার অবস্থা হালনাগাদ হয়েছে',
+      delete: 'মুছুন',
+      deleteWarn: 'এই অর্ডার স্থায়ীভাবে মুছবেন?',
+      deleted: 'অর্ডার মুছে ফেলা হয়েছে এবং স্টক ফিরে গেছে',
+      stockFailed: 'স্টক হালনাগাদ হয়নি',
       productCol: 'পণ্য',
       rateCol: 'দর',
       qtyCol: 'পরিমাণ',
@@ -126,6 +143,12 @@ export default function AdminOrders() {
       deliveredLock: 'Delivered orders cannot be edited.',
       payUpdated: 'Payment status updated',
       updateFailed: 'Update failed',
+      restocked: 'Order cancelled and stock restored',
+      statusUpdated: 'Order status updated',
+      delete: 'Delete',
+      deleteWarn: 'Delete this order permanently?',
+      deleted: 'Order deleted and stock restored',
+      stockFailed: 'Stock could not be updated',
       productCol: 'Product',
       rateCol: 'Rate',
       qtyCol: 'Qty',
@@ -152,7 +175,7 @@ export default function AdminOrders() {
       const stockMap = {};
       prodData.forEach(p => {
         stockMap[p.id] = {
-          totalStock: Number(p.stock) || 100,
+          totalStock: Number(p.stock) || 0,
           variants: (p.product_variants || []).reduce((acc, v) => {
             acc[v.id] = Number(v.stock) || 50;
             return acc;
@@ -168,6 +191,27 @@ export default function AdminOrders() {
     fetchData();
   }, []);
 
+  const applyAbsoluteStock = (absolute) => {
+    if (!absolute) return;
+    setProductsStock((current) => {
+      const next = { ...current };
+      Object.entries(absolute).forEach(([id, stock]) => {
+        if (!next[id]) return;
+        next[id] = { ...next[id], totalStock: stock };
+      });
+      return next;
+    });
+  };
+
+  const syncStockForOrder = async (previous, next) => {
+    if (!isManagedOrder(previous) && !isManagedOrder(next)) return;
+    const delta = stockDelta(previous, next);
+    if (!Object.keys(delta).length) return;
+    await commitManagedStock(previous.id || next.id, previous, next);
+    const absolute = await broadcastStock(Object.keys({ ...aggregateQty(previous?.items), ...aggregateQty(next?.items) }));
+    applyAbsoluteStock(absolute);
+  };
+
   const updateOrderField = async (orderId, fields) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
@@ -177,24 +221,68 @@ export default function AdminOrders() {
       if (!confirmRevert) return;
     }
 
-    if (fields.status === 'cancelled') {
+    if (fields.status === 'cancelled' || fields.status === 'failed') {
       const confirmCancel = window.confirm(`${t.cancelWarn} #${targetOrder.order_number || ''}`);
       if (!confirmCancel) return;
     }
 
+    const nextOrder = { ...targetOrder, ...fields };
     const { error } = await supabase
       .from('orders')
       .update(fields)
       .eq('id', orderId);
 
-    if (!error) {
-      setOrders(orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)));
-      if (fields.payment_status) {
-        toast.success(t.payUpdated);
+    if (error) {
+      toast.error(isInsufficientStock(error) ? stockWarning(lang, lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product', 0) : t.updateFailed);
+      console.error(error);
+      return;
+    }
+
+    setOrders(orders.map((o) => (o.id === orderId ? nextOrder : o)));
+
+    try {
+      await syncStockForOrder(targetOrder, nextOrder);
+    } catch (stockError) {
+      await supabase.from('orders').update({
+        status: targetOrder.status,
+        items: targetOrder.items,
+        total_amount: targetOrder.total_amount,
+      }).eq('id', orderId);
+      setOrders(orders);
+      try {
+        await syncStockForOrder(nextOrder, targetOrder);
+      } catch (revertError) {
+        console.error(revertError);
       }
-    } else {
+      toast.error(isInsufficientStock(stockError) ? stockWarning(lang, stockError.productName || (lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product'), stockError.available || 0) : t.stockFailed);
+      console.error(stockError);
+      return;
+    }
+
+    if (fields.status === 'cancelled' || fields.status === 'failed' || fields.payment_status === 'failed') toast.success(t.restocked);
+    else if (fields.payment_status) toast.success(t.payUpdated);
+    else if (fields.status || fields.items) toast.success(t.statusUpdated);
+  };
+
+  const deleteOrder = async (order) => {
+    if (!window.confirm(`${t.deleteWarn} #${order.order_number || ''}`)) return;
+    const { error } = await supabase.from('orders').delete().eq('id', order.id);
+    if (error) {
       toast.error(t.updateFailed);
       console.error(error);
+      return;
+    }
+    setOrders((current) => current.filter((row) => row.id !== order.id));
+    try {
+      if (isManagedOrder(order) && !['cancelled', 'failed'].includes(String(order.status || '').toLowerCase()) && String(order.payment_status || '').toLowerCase() !== 'failed') {
+        await commitManagedStock(order.id, order, { ...order, status: 'cancelled' });
+        const absolute = await broadcastStock(Object.keys(aggregateQty(order.items)));
+        applyAbsoluteStock(absolute);
+      }
+      toast.success(t.deleted);
+    } catch (stockError) {
+      toast.error(t.stockFailed);
+      console.error(stockError);
     }
   };
 
@@ -205,7 +293,7 @@ export default function AdminOrders() {
     orders.forEach((order) => {
       if (order.status !== 'cancelled' && Array.isArray(order.items)) {
         order.items.forEach((item) => {
-          if (item.stockApplied) return
+          if (item.stockApplied || item.stockTracked) return
           if (item.productId && liveMap[item.productId]) {
             if (item.variantId && liveMap[item.productId].variants?.[item.variantId] !== undefined) {
               liveMap[item.productId].variants[item.variantId] -= Number(item.quantity) || 0;
@@ -220,37 +308,13 @@ export default function AdminOrders() {
     return liveMap;
   }, [productsStock, orders]);
 
-  const metrics = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    const currentMonth = new Date().toISOString().slice(0, 7);
-
-    let daily = 0;
-    let monthly = 0;
-    let cashCollected = 0;
-    let totalLifetime = 0;
-
-    orders.forEach((o) => {
-      const amt = Number(o.total_amount) || 0;
-      if (o.status?.toLowerCase() === 'cancelled') return;
-
-      totalLifetime += amt;
-
-      const orderDate = o.created_at ? new Date(o.created_at).toISOString() : '';
-      if (orderDate.startsWith(today)) {
-        daily += amt;
-      }
-      if (orderDate.startsWith(currentMonth)) {
-        monthly += amt;
-      }
-      if (isPaymentVerified(o.payment_status)) {
-        cashCollected += amt;
-      }
-    });
-
-    return { daily, monthly, cashCollected, totalLifetime };
-  }, [orders]);
+  const paymentStats = useMemo(
+    () => summarizePayments(orders, paymentRange),
+    [orders, paymentRange],
+  );
 
   const filteredOrders = orders.filter((o) => {
+    const matchesRange = inPaymentRange(o.created_at, paymentRange);
     const matchesFilter = activeFilter === 'all' ? true : o.status?.toLowerCase() === activeFilter.toLowerCase();
 
     const query = searchQuery.toLowerCase();
@@ -262,7 +326,7 @@ export default function AdminOrders() {
       (o.transaction_id && o.transaction_id.toLowerCase().includes(query)) ||
       (o.sender_number && o.sender_number.includes(query));
 
-    return matchesFilter && matchesSearch;
+    return matchesRange && matchesFilter && matchesSearch;
   });
 
   const copyTrx = async (value) => {
@@ -407,19 +471,7 @@ export default function AdminOrders() {
           </div>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[
-            [t.dailySale, metrics.daily, 'text-teal-700'],
-            [t.monthlySale, metrics.monthly, 'text-blue-700'],
-            [t.cashCollection, metrics.cashCollected, 'text-emerald-700'],
-            [t.totalSale, metrics.totalLifetime, 'text-ink'],
-          ].map(([label, value, color]) => (
-            <div key={label} className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold text-stone-500">{label}</div>
-              <div className={`mt-2 text-xl font-extrabold ${color}`}>৳{value.toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
+        <PaymentBreakdown lang={lang} range={paymentRange} onRange={setPaymentRange} stats={paymentStats} />
 
         <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap gap-2">
@@ -498,6 +550,7 @@ export default function AdminOrders() {
                             {isDelivered ? t.editLocked : t.edit}
                           </button>
                           <button type="button" onClick={() => handlePrintMemo(order)} className={actionBtn}>{t.print}</button>
+                          <button type="button" onClick={() => deleteOrder(order)} className="inline-flex min-h-11 items-center rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition-all duration-200">{t.delete}</button>
                         </div>
                       </div>
                     </div>

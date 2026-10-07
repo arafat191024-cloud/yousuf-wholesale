@@ -175,6 +175,9 @@ create policy "orders_insert_guest" on public.orders
   for insert with check (auth.uid() is null and user_id is null);
 create policy "orders_update_admin" on public.orders
   for update using (public.is_admin());
+create policy "orders_delete_admin" on public.orders
+  for delete using (public.is_admin());
+-- Live stock movements: supabase/migrations/20261007_stock_sync.sql
 
 -- ORDER ITEMS: visible if you can see the parent order
 create policy "order_items_select" on public.order_items

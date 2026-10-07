@@ -8,6 +8,16 @@ import { LanguageToggle } from '../../components/LanguageToggle';
 import { formatTaka } from '../../lib/format';
 import { needsTransactionId, paymentMethodLabel } from '../../lib/paymentConfig';
 import { productSearchText, productSeries, productSizes } from '../../lib/productMeta';
+import {
+  aggregateQty,
+  assertInStock,
+  broadcastStock,
+  commitManagedStock,
+  isInsufficientStock,
+  stockWarning,
+  trackItems,
+  useLiveStock,
+} from '../../lib/stockSync';
 
 const copy = {
   bn: {
@@ -96,6 +106,7 @@ export default function AdminPos() {
   const [senderNumber, setSenderNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(null);
+  useLiveStock(setProducts);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,7 +135,16 @@ export default function AdminPos() {
   const total = lines.reduce((sum, line) => sum + Number(line.unitPrice || 0) * line.quantity, 0);
   const field = 'h-11 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-sm outline-none focus:border-ink';
 
+  function usedQty(productId, linesNow = lines) {
+    return linesNow.filter((line) => line.productId === productId).reduce((sum, line) => sum + line.quantity, 0);
+  }
+
   function addProduct(product) {
+    const available = Number(product.stock) || 0;
+    if (usedQty(product.id) + 1 > available) {
+      toast.error(stockWarning(lang, product.name, available));
+      return;
+    }
     setLines((current) => {
       const existing = current.find((line) => line.productId === product.id);
       if (existing) {
@@ -152,8 +172,17 @@ export default function AdminPos() {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   }
 
-  async function restoreStock(updates) {
-    await Promise.all(updates.map((row) => supabase.from('products').update({ stock: row.previous }).eq('id', row.id)));
+  function changeQty(line, nextQty) {
+    const product = products.find((item) => item.id === line.productId);
+    const available = Number(product?.stock) || 0;
+    const others = lines
+      .filter((item) => item.productId === line.productId && item.key !== line.key)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    if (nextQty + others > available) {
+      toast.error(stockWarning(lang, product?.name || line.title, available));
+      return;
+    }
+    updateLine(line.key, { quantity: nextQty });
   }
 
   async function saveMemo(event) {
@@ -168,39 +197,7 @@ export default function AdminPos() {
     }
 
     setSubmitting(true);
-    const ids = [...new Set(lines.map((line) => line.productId))];
-    const { data: stockRows, error: stockReadError } = await supabase.from('products').select('id, stock').in('id', ids);
-    if (stockReadError || !stockRows) {
-      toast.error(t.stockFailed);
-      setSubmitting(false);
-      return;
-    }
-
-    const stockMap = Object.fromEntries(stockRows.map((row) => [row.id, Number(row.stock) || 0]));
-    const qtyMap = {};
-    lines.forEach((line) => {
-      qtyMap[line.productId] = (qtyMap[line.productId] || 0) + line.quantity;
-    });
-    const updates = Object.entries(qtyMap).map(([id, quantity]) => ({
-      id,
-      previous: stockMap[id] ?? 0,
-      next: (stockMap[id] ?? 0) - quantity,
-    }));
-
-    const applied = [];
-    for (const row of updates) {
-      const { error } = await supabase.from('products').update({ stock: row.next }).eq('id', row.id);
-      if (error) {
-        await restoreStock(applied);
-        toast.error(t.stockFailed);
-        console.error(error);
-        setSubmitting(false);
-        return;
-      }
-      applied.push(row);
-    }
-
-    const items = lines.map((line) => ({
+    const draftItems = lines.map((line) => ({
       key: line.key,
       productId: line.productId,
       variantId: line.variantId,
@@ -211,8 +208,17 @@ export default function AdminPos() {
       image: line.image,
       size: line.size,
       series: line.series,
-      stockApplied: true,
     }));
+
+    try {
+      await assertInStock(draftItems);
+    } catch (stockError) {
+      toast.error(isInsufficientStock(stockError) ? stockWarning(lang, stockError.productName, stockError.available) : t.stockFailed);
+      setSubmitting(false);
+      return;
+    }
+
+    const items = trackItems(draftItems);
     const amount = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
     const orderNumber = `MEMO-${Math.floor(100000 + Math.random() * 900000)}`;
     const { data: sessionData } = await supabase.auth.getSession();
@@ -234,18 +240,28 @@ export default function AdminPos() {
       items,
     };
 
-    let { data, error } = await supabase.from('orders').insert([payload]).select('order_number').single();
+    let { data, error } = await supabase.from('orders').insert([payload]).select('id, order_number').single();
     if (error && /sender_number/i.test(error.message || '')) {
       const { sender_number: sentFrom, ...rest } = payload;
       rest.payment_reference = sentFrom || null;
-      const retry = await supabase.from('orders').insert([rest]).select('order_number').single();
+      const retry = await supabase.from('orders').insert([rest]).select('id, order_number').single();
       data = retry.data;
       error = retry.error;
     }
     if (error) {
-      await restoreStock(applied);
-      toast.error(t.failed);
+      toast.error(isInsufficientStock(error) ? stockWarning(lang, lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product', 0) : t.failed);
       console.error(error);
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      await commitManagedStock(data.id, null, { status: 'confirmed', items });
+      await broadcastStock(Object.keys(aggregateQty(items)));
+    } catch (stockError) {
+      await supabase.from('orders').delete().eq('id', data.id);
+      toast.error(isInsufficientStock(stockError) ? stockWarning(lang, stockError.productName || (lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product'), stockError.available || 0) : t.stockFailed);
+      console.error(stockError);
       setSubmitting(false);
       return;
     }
@@ -354,9 +370,9 @@ export default function AdminPos() {
                       <div>
                         <p className="text-[11px] font-bold text-slate-500">{t.qty}</p>
                         <div className="mt-1 flex items-center gap-1">
-                          <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200" onClick={() => updateLine(line.key, { quantity: Math.max(1, line.quantity - 1) })}>−</button>
+                          <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 transition-all duration-200" onClick={() => changeQty(line, Math.max(1, line.quantity - 1))}>−</button>
                           <span className="w-8 text-center text-sm font-bold">{line.quantity}</span>
-                          <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200" onClick={() => updateLine(line.key, { quantity: line.quantity + 1 })}>+</button>
+                          <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 transition-all duration-200" onClick={() => changeQty(line, line.quantity + 1)}>+</button>
                         </div>
                         <p className="mt-1 text-right text-sm font-extrabold">{formatTaka(line.unitPrice * line.quantity, lang)}</p>
                       </div>

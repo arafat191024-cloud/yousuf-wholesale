@@ -15,6 +15,14 @@ import {
   needsTransactionId,
   paymentMethodLabel,
 } from '../lib/paymentConfig'
+import {
+  assertInStock,
+  broadcastStock,
+  commitManagedStock,
+  isInsufficientStock,
+  stockWarning,
+  trackItems,
+} from '../lib/stockSync'
 
 const METHODS = [
   { id: 'cod', icon: '💵' },
@@ -87,6 +95,17 @@ export function Checkout() {
 
     setSubmitting(true)
     try {
+      const items = trackItems(cartItems)
+      try {
+        await assertInStock(items)
+      } catch (stockError) {
+        if (isInsufficientStock(stockError)) {
+          toast.error(stockWarning(lang, stockError.productName, stockError.available))
+          return
+        }
+        throw stockError
+      }
+
       const generatedOrderNumber = 'YE-' + Math.floor(100000 + Math.random() * 900000)
       const { data: sessionData } = await supabase.auth.getSession()
       const userId = sessionData?.session?.user?.id || null
@@ -105,7 +124,7 @@ export function Checkout() {
         transaction_id: showPrepaid ? transactionId.trim() : null,
         sender_number: showPrepaid ? senderNumber.trim() : null,
         payment_reference: paymentReference.trim() || null,
-        items: cartItems,
+        items,
       }
       if (userId) payload.user_id = userId
 
@@ -118,9 +137,16 @@ export function Checkout() {
         error = retry.error
       }
       if (error) {
-        toast.error(t.orderError)
+        toast.error(isInsufficientStock(error) ? stockWarning(lang, lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product', 0) : t.orderError)
         console.error(error)
         return
+      }
+
+      try {
+        await commitManagedStock(data.id, null, { status: 'pending', items })
+        await broadcastStock(items.map((item) => item.productId))
+      } catch (stockError) {
+        console.error(stockError)
       }
 
       const orderNumber = data?.order_number || generatedOrderNumber

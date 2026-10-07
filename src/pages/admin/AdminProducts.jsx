@@ -6,6 +6,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { EmptyState } from '../../components/EmptyState';
 import { BackButton } from '../../components/BackButton';
 import { LanguageToggle } from '../../components/LanguageToggle';
+import { useLiveStock } from '../../lib/stockSync';
 
 const copy = {
   bn: {
@@ -209,6 +210,7 @@ export default function AdminProducts() {
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  useLiveStock(setProducts);
 
   const fetchData = async () => {
     setLoading(true);

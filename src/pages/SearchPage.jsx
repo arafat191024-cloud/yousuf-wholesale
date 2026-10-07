@@ -6,6 +6,7 @@ import { ProductSkeleton } from '../components/Skeletons'
 import { EmptyState } from '../components/EmptyState'
 import { BackButton } from '../components/BackButton'
 import { ProductCard } from '../components/ProductCard'
+import { useLiveStock } from '../lib/stockSync'
 
 export function SearchPage() {
   const [params] = useSearchParams()
@@ -14,6 +15,7 @@ export function SearchPage() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  useLiveStock(setProducts)
 
   useEffect(() => {
     let cancelled = false
