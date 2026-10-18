@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
@@ -7,8 +7,10 @@ import { EmptyState } from '../../components/EmptyState';
 import { BackButton } from '../../components/BackButton';
 import { LanguageToggle } from '../../components/LanguageToggle';
 import { ProductFormDrawer } from '../../components/ProductFormDrawer';
+import { AdminStockAlert } from '../../components/AdminStockAlert';
 import { insertProductRow, updateProductRow } from '../../lib/orderInsert';
 import { productSearchText, productSeries, productSizes } from '../../lib/productMeta';
+import { imageFileFromList, uploadProductImage } from '../../lib/productImage';
 import { useLiveStock } from '../../lib/stockSync';
 
 const copy = {
@@ -52,6 +54,16 @@ const copy = {
     hidden: 'লুকানো',
     empty: 'কোনো পণ্য পাওয়া যায়নি',
     pcs: 'পিস',
+    allTab: 'All Products (সব)',
+    inTab: 'In Stock (স্টকে আছে)',
+    lowTab: 'Low Stock (< 10 pcs) (কম স্টক)',
+    outTab: 'Out of Stock (0 pcs) (স্টক শেষ)',
+    low: 'কম স্টক',
+    changePhoto: 'ছবি পরিবর্তন',
+    imageSaved: 'ছবি হালনাগাদ হয়েছে',
+    imageFallback: 'স্টোরেজ পাওয়া যায়নি। ছবি সরাসরি সংরক্ষণ করা হয়েছে।',
+    imageFailed: 'ছবি আপলোড হয়নি। আবার চেষ্টা করুন।',
+    imageLarge: 'ছবি বড়। ছোট ছবি দিন।',
   },
   en: {
     title: 'Products & stock',
@@ -93,6 +105,16 @@ const copy = {
     hidden: 'Hidden',
     empty: 'No products found',
     pcs: 'pcs',
+    allTab: 'All Products (সব)',
+    inTab: 'In Stock (স্টকে আছে)',
+    lowTab: 'Low Stock (< 10 pcs) (কম স্টক)',
+    outTab: 'Out of Stock (0 pcs) (স্টক শেষ)',
+    low: 'Low stock',
+    changePhoto: 'Change photo',
+    imageSaved: 'Photo updated',
+    imageFallback: 'Storage is unavailable. The image was saved directly.',
+    imageFailed: 'Image upload failed. Try again.',
+    imageLarge: 'That image is too large. Use a smaller file.',
   },
 };
 
@@ -178,6 +200,41 @@ function RateEditor({ price, label, saveLabel, cancelLabel, onSave }) {
   );
 }
 
+function stockBand(product) {
+  const stock = Number(product?.stock) || 0;
+  if (stock <= 0) return 'out';
+  if (stock < 10) return 'low';
+  return 'in';
+}
+
+function ThumbEditor({ product, label, busy, onPick }) {
+  return (
+    <label className="group relative h-14 w-14 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+      <img
+        src={product.image_url || '/wheels.png'}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="h-full w-full object-cover"
+      />
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-ink/80 px-1 py-1 text-center text-[9px] font-extrabold leading-tight text-white opacity-100 md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+        {busy ? '…' : label}
+      </span>
+      <input
+        type="file"
+        accept="image/*"
+        disabled={busy}
+        className="sr-only"
+        onChange={(event) => {
+          const file = imageFileFromList(event.target.files);
+          event.target.value = '';
+          if (file) onPick(product, file);
+        }}
+      />
+    </label>
+  );
+}
+
 function StockActions({ onAdjust }) {
   const steps = [
     { amount: -10, className: 'border-red-200 bg-red-50 text-red-800' },
@@ -213,6 +270,9 @@ export default function AdminProducts() {
   const [query, setQuery] = useState('');
   const [drawer, setDrawer] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [photoBusyId, setPhotoBusyId] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const stockFilter = ['in', 'low', 'out'].includes(searchParams.get('stock')) ? searchParams.get('stock') : 'all';
   useLiveStock(setProducts);
 
   const fetchData = async () => {
@@ -281,11 +341,57 @@ export default function AdminProducts() {
     }
   };
 
+  const stockCounts = useMemo(() => {
+    const counts = { all: products.length, in: 0, low: 0, out: 0 };
+    products.forEach((product) => {
+      const band = stockBand(product);
+      if (band === 'out') counts.out += 1;
+      else {
+        counts.in += 1;
+        if (band === 'low') counts.low += 1;
+      }
+    });
+    return counts;
+  }, [products]);
+
   const visibleProducts = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return products;
-    return products.filter((product) => productSearchText(product).includes(needle));
-  }, [products, query]);
+    return products.filter((product) => {
+      const band = stockBand(product);
+      if (stockFilter === 'out' && band !== 'out') return false;
+      if (stockFilter === 'low' && band !== 'low') return false;
+      if (stockFilter === 'in' && band === 'out') return false;
+      if (needle && !productSearchText(product).includes(needle)) return false;
+      return true;
+    });
+  }, [products, query, stockFilter]);
+
+  const setStockFilter = (next) => {
+    const params = new URLSearchParams(searchParams);
+    if (!next || next === 'all') params.delete('stock');
+    else params.set('stock', next);
+    setSearchParams(params, { replace: true });
+  };
+
+  const replacePhoto = async (product, file) => {
+    setPhotoBusyId(product.id);
+    const previous = product.image_url;
+    try {
+      const result = await uploadProductImage(file);
+      setProducts((rows) => rows.map((item) => (item.id === product.id ? { ...item, image_url: result.url } : item)));
+      const { error } = await supabase.from('products').update({ image_url: result.url }).eq('id', product.id);
+      if (error) {
+        setProducts((rows) => rows.map((item) => (item.id === product.id ? { ...item, image_url: previous } : item)));
+        toast.error(t.imageFailed);
+        return;
+      }
+      toast.success(result.fallback ? t.imageFallback : t.imageSaved);
+    } catch (error) {
+      toast.error(error?.code === 'TOO_LARGE' ? t.imageLarge : t.imageFailed);
+    } finally {
+      setPhotoBusyId(null);
+    }
+  };
 
   const saveProduct = useCallback(async (payload) => {
     if (!payload.name || !Number.isFinite(payload.price) || !payload.category_id) {
@@ -335,6 +441,7 @@ export default function AdminProducts() {
   return (
     <div className="min-h-screen bg-paper px-4 py-6">
       <div className="mx-auto max-w-6xl">
+        <AdminStockAlert lang={lang} />
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm">
           <div>
             <BackButton fallback="/admin/orders" className="mb-3" />
@@ -364,6 +471,32 @@ export default function AdminProducts() {
           </div>
         </div>
 
+        <div className="mb-4 flex flex-wrap gap-2">
+          {[
+            ['all', t.allTab],
+            ['in', t.inTab],
+            ['low', t.lowTab],
+            ['out', t.outTab],
+          ].map(([id, label]) => {
+            const active = stockFilter === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setStockFilter(id)}
+                className={`inline-flex h-11 items-center gap-2 rounded-full border px-4 text-xs font-bold transition-all duration-150 transform-gpu active:scale-95 ${
+                  active ? 'border-ink bg-ink text-white' : 'border-slate-200 bg-white text-ink'
+                }`}
+              >
+                {label}
+                <span className={`rounded-full px-1.5 text-[10px] ${active ? 'bg-white/15 text-amber-200' : 'bg-slate-100 text-slate-600'}`}>
+                  {stockCounts[id]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="mb-4">
           <input
             className={fieldClass}
@@ -391,17 +524,18 @@ export default function AdminProducts() {
           ) : (
             <>
               <div className="block space-y-3 p-4 md:hidden">
-                {visibleProducts.map((p) => {
-                  const isOut = (Number(p.stock) || 0) <= 0;
-                  return (
+                {visibleProducts.map((p) => (
                     <article key={p.id} className="rounded-2xl border border-stone-200 bg-sand p-4">
                       <div className="flex items-start justify-between gap-3">
-                        <div>
+                        <div className="flex min-w-0 items-start gap-3">
+                          <ThumbEditor product={p} label={t.changePhoto} busy={photoBusyId === p.id} onPick={replacePhoto} />
+                          <div className="min-w-0">
                           <h3 className="font-extrabold text-ink">{p.name}</h3>
                           <p className="mt-1 text-xs text-stone-500">{p.categories?.name || (lang === 'bn' ? 'হার্ডওয়্যার' : 'Hardware')} · {p.product_code || (lang === 'bn' ? 'পাইকারি' : 'Wholesale')}</p>
                           <p className="mt-1 text-[11px] font-semibold text-slate-500">
                             {[productSizes(p)[0], productSeries(p)].filter(Boolean).join(' · ') || '—'}
                           </p>
+                          </div>
                         </div>
                         <RateEditor
                           price={p.price}
@@ -411,8 +545,8 @@ export default function AdminProducts() {
                           onSave={(next) => savePrice(p.id, next)}
                         />
                       </div>
-                      <p className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[11px] font-extrabold ${isOut ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                        {isOut ? `${t.out} (0)` : `${t.inStock} (${p.stock} ${t.pcs})`}
+                      <p className={`mt-3 inline-flex min-h-8 items-center rounded-full px-2.5 py-1 text-[11px] font-extrabold ${stockBand(p) === 'out' ? 'bg-red-100 text-red-800' : stockBand(p) === 'low' ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
+                        {stockBand(p) === 'out' ? `${t.out} (0)` : stockBand(p) === 'low' ? `${t.low} (${p.stock} ${t.pcs})` : `${t.inStock} (${p.stock} ${t.pcs})`}
                       </p>
                       <div className="mt-3">
                         <StockActions onAdjust={(amount) => adjustStock(p.id, p.stock, amount)} />
@@ -434,8 +568,7 @@ export default function AdminProducts() {
                         </button>
                       </div>
                     </article>
-                  );
-                })}
+                ))}
               </div>
 
               <div className="hidden overflow-x-auto md:block">
@@ -452,19 +585,11 @@ export default function AdminProducts() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleProducts.map((p) => {
-                      const isOut = (Number(p.stock) || 0) <= 0;
-                      return (
+                    {visibleProducts.map((p) => (
                         <tr key={p.id} className="border-t border-stone-100">
                           <td className="px-5 py-3 font-bold text-ink">
                             <div className="flex items-center gap-3">
-                              <img
-                                src={p.image_url || '/wheels.png'}
-                                alt=""
-                                loading="lazy"
-                                decoding="async"
-                                className="h-12 w-12 rounded-xl object-cover"
-                              />
+                              <ThumbEditor product={p} label={t.changePhoto} busy={photoBusyId === p.id} onPick={replacePhoto} />
                               <div>
                                 <p>{p.name}</p>
                                 <p className="text-[11px] font-semibold text-slate-500">
@@ -489,8 +614,8 @@ export default function AdminProducts() {
                             />
                           </td>
                           <td className="px-3 py-3 text-center">
-                            <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-extrabold ${isOut ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                              {isOut ? `${t.out} (0)` : `${t.inStock} (${p.stock} ${t.pcs})`}
+                            <span className={`inline-flex min-h-8 items-center rounded-full px-2.5 py-1 text-[11px] font-extrabold ${stockBand(p) === 'out' ? 'bg-red-100 text-red-800' : stockBand(p) === 'low' ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
+                              {stockBand(p) === 'out' ? `${t.out} (0)` : stockBand(p) === 'low' ? `${t.low} (${p.stock} ${t.pcs})` : `${t.inStock} (${p.stock} ${t.pcs})`}
                             </span>
                           </td>
                           <td className="px-3 py-3">
@@ -515,8 +640,7 @@ export default function AdminProducts() {
                             </button>
                           </td>
                         </tr>
-                      );
-                    })}
+                    ))}
                   </tbody>
                 </table>
               </div>

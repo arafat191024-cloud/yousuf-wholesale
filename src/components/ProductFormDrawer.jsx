@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import { useEffect, useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import { categoryCopy } from '../lib/catalog'
 import { SERIES_OPTIONS, formatSizeLabel, productSeries, productSizes } from '../lib/productMeta'
+import { imageFileFromList, uploadProductImage } from '../lib/productImage'
 import { useScrollLock } from '../lib/useScrollLock'
 
 const copy = {
@@ -12,7 +13,11 @@ const copy = {
     imageUrl: 'ছবির লিংক',
     upload: 'ফাইল আপলোড',
     uploading: 'আপলোড হচ্ছে...',
-    uploadFailed: 'ছবি আপলোড হয়নি। লিংক দিন।',
+    uploadFailed: 'ছবি আপলোড হয়নি। আবার চেষ্টা করুন।',
+    uploadSaved: 'ছবি যোগ হয়েছে',
+    uploadFallback: 'স্টোরেজ পাওয়া যায়নি। ছবি সরাসরি সংরক্ষণ করা হয়েছে।',
+    uploadLarge: 'ছবি বড়। ছোট ছবি দিন অথবা লিংক ব্যবহার করুন।',
+    dropHint: 'টেনে আনুন, পেস্ট করুন (Ctrl+V), অথবা ফাইল বেছে নিন',
     name: 'পণ্যের নাম',
     category: 'ক্যাটাগরি',
     series: 'সিরিজ',
@@ -36,7 +41,11 @@ const copy = {
     imageUrl: 'Image URL',
     upload: 'Upload file',
     uploading: 'Uploading...',
-    uploadFailed: 'Image upload failed. Paste a URL instead.',
+    uploadFailed: 'Image upload failed. Try again or paste a URL.',
+    uploadSaved: 'Image added',
+    uploadFallback: 'Storage is unavailable. The image was saved directly.',
+    uploadLarge: 'That image is too large. Use a smaller file or paste a URL.',
+    dropHint: 'Drag, paste (Ctrl+V), or choose a file',
     name: 'Product name',
     category: 'Category',
     series: 'Series',
@@ -96,6 +105,8 @@ export function ProductFormDrawer({ lang, product, categories, submitting, onClo
   const [form, setForm] = useState(() => (editing ? formFromProduct(product) : blankForm(categories)))
   const [uploading, setUploading] = useState(false)
   const [uploadNote, setUploadNote] = useState('')
+  const [dragOver, setDragOver] = useState(false)
+  const fileRef = useRef(null)
   useScrollLock(true)
 
   useEffect(() => {
@@ -107,26 +118,44 @@ export function ProductFormDrawer({ lang, product, categories, submitting, onClo
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  async function onFile(event) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
+  async function uploadFile(file) {
+    if (!file || uploading) return
     setUploading(true)
     setUploadNote('')
-    const path = `${crypto.randomUUID()}-${file.name.replace(/[^\w.]+/g, '-')}`
-    const { error } = await supabase.storage.from('product-images').upload(path, file, {
-      cacheControl: '3600',
-      upsert: false,
-      contentType: file.type || undefined,
-    })
-    setUploading(false)
-    if (error) {
-      setUploadNote(t.uploadFailed)
-      return
+    try {
+      const result = await uploadProductImage(file)
+      setField('imageUrl', result.url)
+      if (result.fallback) {
+        setUploadNote(t.uploadFallback)
+        toast(t.uploadFallback)
+      } else {
+        toast.success(t.uploadSaved)
+      }
+    } catch (error) {
+      const message = error?.code === 'TOO_LARGE' ? t.uploadLarge : t.uploadFailed
+      setUploadNote(message)
+      toast.error(message)
+    } finally {
+      setUploading(false)
     }
-    const { data } = supabase.storage.from('product-images').getPublicUrl(path)
-    if (data?.publicUrl) setField('imageUrl', data.publicUrl)
   }
+
+  function onFile(event) {
+    const file = imageFileFromList(event.target.files)
+    event.target.value = ''
+    if (file) uploadFile(file)
+  }
+
+  useEffect(() => {
+    function onPaste(event) {
+      const file = imageFileFromList(event.clipboardData?.files)
+      if (!file) return
+      event.preventDefault()
+      uploadFile(file)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  })
 
   function submit(event) {
     event.preventDefault()
@@ -158,26 +187,42 @@ export function ProductFormDrawer({ lang, product, categories, submitting, onClo
           <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
             <div>
               <p className="text-xs font-bold text-slate-600">{t.image}</p>
-              <div className="mt-2 flex items-center gap-3">
-                <div className="aspect-square h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+              <div className="mt-2 flex items-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    setDragOver(true)
+                  }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    setDragOver(false)
+                    const file = imageFileFromList(event.dataTransfer?.files)
+                    if (file) uploadFile(file)
+                  }}
+                  className={`relative aspect-square h-28 w-28 shrink-0 overflow-hidden rounded-2xl border-2 border-dashed bg-slate-50 transition-all duration-150 ${dragOver ? 'border-ink bg-amber-50' : 'border-slate-300'}`}
+                >
                   {form.imageUrl ? (
                     <img src={form.imageUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-slate-400">—</div>
+                    <span className="flex h-full items-center justify-center px-2 text-center text-[11px] font-bold text-slate-400">＋</span>
                   )}
-                </div>
+                </button>
                 <div className="min-w-0 flex-1">
                   <input
                     className={fieldClass}
-                    value={form.imageUrl}
+                    value={form.imageUrl.startsWith('data:') ? '' : form.imageUrl}
                     onChange={(e) => setField('imageUrl', e.target.value)}
                     placeholder="https://"
                     aria-label={t.imageUrl}
                   />
-                  <label className="mt-2 inline-flex h-11 cursor-pointer items-center rounded-xl border border-slate-200 px-3 text-xs font-bold text-ink transition-all duration-200 hover:bg-slate-50">
+                  <label className="mt-2 inline-flex h-11 cursor-pointer items-center rounded-xl border border-slate-200 px-3 text-xs font-bold text-ink transition-all duration-150 transform-gpu active:scale-95 hover:bg-slate-50">
                     {uploading ? t.uploading : t.upload}
-                    <input type="file" accept="image/*" className="sr-only" onChange={onFile} disabled={uploading} />
+                    <input ref={fileRef} type="file" accept="image/*" className="sr-only" onChange={onFile} disabled={uploading} />
                   </label>
+                  <p className="mt-2 text-[11px] font-semibold leading-snug text-slate-500">{t.dropHint}</p>
                 </div>
               </div>
               {uploadNote && <p className="mt-2 text-xs font-semibold text-amber-700">{uploadNote}</p>}

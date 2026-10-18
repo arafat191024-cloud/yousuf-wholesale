@@ -25,6 +25,7 @@ import {
   paymentMethodLabel,
 } from '../../lib/paymentConfig';
 import { DELIVERY_CHANNELS, deliveryChannelLabel } from '../../lib/deliveryChannels';
+import { AdminStockAlert } from '../../components/AdminStockAlert';
 
 function showPaymentDetail(method, value) {
   return needsTransactionId(method) || Boolean(String(value || '').trim());
@@ -459,6 +460,7 @@ export default function AdminOrders() {
   return (
     <div className="min-h-screen bg-paper px-4 py-6">
       <div className="mx-auto max-w-6xl">
+        <AdminStockAlert lang={lang} />
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm">
           <div>
             <BackButton fallback="/" className="mb-3" />
