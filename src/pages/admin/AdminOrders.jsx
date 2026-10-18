@@ -14,6 +14,7 @@ import {
   commitManagedStock,
   isInsufficientStock,
   isManagedOrder,
+  stockDelta,
   stockWarning,
 } from '../../lib/stockSync';
 import {
