@@ -54,6 +54,8 @@ create table if not exists public.products (
   stock integer not null default 0,
   min_wholesale_qty integer not null default 1,
   image_url text,
+  series text,
+  size text,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -91,6 +93,9 @@ create table if not exists public.orders (
   delivery_charge numeric(12,2) not null default 0,
   total_amount numeric(12,2) not null default 0,
   delivery_address text,
+  shipping_address text,
+  delivery_channel text,
+  transport_note text,
   phone text,
   customer_name text,
   shop_name text,

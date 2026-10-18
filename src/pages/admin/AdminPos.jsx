@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabaseClient';
@@ -8,6 +8,10 @@ import { LanguageToggle } from '../../components/LanguageToggle';
 import { formatTaka } from '../../lib/format';
 import { needsTransactionId, paymentMethodLabel } from '../../lib/paymentConfig';
 import { productSearchText, productSeries, productSizes } from '../../lib/productMeta';
+import { QtyStepper } from '../../components/QtyStepper';
+import { DeliveryChannelFields } from '../../components/DeliveryChannelFields';
+import { deliveryChannelLabel } from '../../lib/deliveryChannels';
+import { insertOrder } from '../../lib/orderInsert';
 import {
   aggregateQty,
   assertInStock,
@@ -51,6 +55,8 @@ const copy = {
     print: 'চালান ছাপুন',
     trx: 'লেনদেন নম্বর',
     sender: 'প্রেরকের নম্বর',
+    channelMissing: 'ডেলিভারি চ্যানেল নির্বাচন করুন।',
+    transport: 'পরিবহন',
   },
   en: {
     title: 'New memo / offline order',
@@ -83,14 +89,43 @@ const copy = {
     print: 'Print memo',
     trx: 'Transaction ID',
     sender: 'Sender number',
+    channelMissing: 'Select a delivery transport channel.',
+    transport: 'Transport',
   },
 };
 
-const METHODS = ['offline', 'bkash', 'bank'];
+const PosLine = memo(function PosLine({ line, lang, t, field, maxQty, onQty, onPrice, onRemove }) {
+  return (
+    <li className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_7rem_auto]">
+      <div>
+        <p className="text-sm font-bold text-ink">{line.title}</p>
+        <p className="text-xs text-slate-500">{[line.size, line.series].filter(Boolean).join(' · ') || '—'}</p>
+        <button type="button" onClick={onRemove} className="mt-1 text-xs font-bold text-red-600 transition-all duration-150 transform-gpu active:scale-95">
+          {t.remove}
+        </button>
+      </div>
+      <label className="text-[11px] font-bold text-slate-500">
+        {t.rate}
+        <input
+          type="number"
+          min="0"
+          value={line.unitPrice}
+          onChange={(e) => onPrice(Number(e.target.value))}
+          className={`${field} mt-1`}
+        />
+      </label>
+      <div>
+        <p className="text-[11px] font-bold text-slate-500">{t.qty}</p>
+        <div className="mt-1">
+          <QtyStepper value={line.quantity} min={1} max={maxQty} onChange={onQty} lang={lang} compact />
+        </div>
+        <p className="mt-1 text-right text-sm font-extrabold">{formatTaka(line.unitPrice * line.quantity, lang)}</p>
+      </div>
+    </li>
+  );
+});
 
-function metaLabel(line) {
-  return [line.size, line.series].filter(Boolean).join(' · ');
-}
+const METHODS = ['offline', 'bkash', 'bank'];
 
 export default function AdminPos() {
   const { lang } = useLanguage();
@@ -104,6 +139,8 @@ export default function AdminPos() {
   const [method, setMethod] = useState('offline');
   const [transactionId, setTransactionId] = useState('');
   const [senderNumber, setSenderNumber] = useState('');
+  const [deliveryChannel, setDeliveryChannel] = useState('');
+  const [transportNote, setTransportNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(null);
   useLiveStock(setProducts);
@@ -111,12 +148,19 @@ export default function AdminPos() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const { data } = await supabase
+      let response = await supabase
         .from('products')
-        .select('id, name, price, stock, image_url, product_code, product_variants(id, size, price)')
+        .select('id, name, price, stock, image_url, product_code, series, size, product_variants(id, size, price)')
         .eq('is_active', true)
         .order('name');
-      if (!cancelled) setProducts(data || []);
+      if (response.error && /series|size/i.test(response.error.message || '')) {
+        response = await supabase
+          .from('products')
+          .select('id, name, price, stock, image_url, product_code, product_variants(id, size, price)')
+          .eq('is_active', true)
+          .order('name');
+      }
+      if (!cancelled) setProducts(response.data || []);
     }
     load();
     return () => {
@@ -132,14 +176,17 @@ export default function AdminPos() {
     return pool.slice(0, 12);
   }, [products, query]);
 
-  const total = lines.reduce((sum, line) => sum + Number(line.unitPrice || 0) * line.quantity, 0);
+  const total = useMemo(
+    () => lines.reduce((sum, line) => sum + Number(line.unitPrice || 0) * line.quantity, 0),
+    [lines],
+  );
   const field = 'h-11 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-sm outline-none focus:border-ink';
 
-  function usedQty(productId, linesNow = lines) {
+  const usedQty = useCallback((productId, linesNow = lines) => {
     return linesNow.filter((line) => line.productId === productId).reduce((sum, line) => sum + line.quantity, 0);
-  }
+  }, [lines]);
 
-  function addProduct(product) {
+  const addProduct = useCallback((product) => {
     const available = Number(product.stock) || 0;
     if (usedQty(product.id) + 1 > available) {
       toast.error(stockWarning(lang, product.name, available));
@@ -166,24 +213,20 @@ export default function AdminPos() {
         },
       ];
     });
-  }
+  }, [lang, lines, products, usedQty]);
 
-  function updateLine(key, patch) {
+  const updateLine = useCallback((key, patch) => {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
-  }
+  }, []);
 
-  function changeQty(line, nextQty) {
+  const lineMax = useCallback((line) => {
     const product = products.find((item) => item.id === line.productId);
     const available = Number(product?.stock) || 0;
     const others = lines
       .filter((item) => item.productId === line.productId && item.key !== line.key)
       .reduce((sum, item) => sum + item.quantity, 0);
-    if (nextQty + others > available) {
-      toast.error(stockWarning(lang, product?.name || line.title, available));
-      return;
-    }
-    updateLine(line.key, { quantity: nextQty });
-  }
+    return Math.max(1, available - others);
+  }, [lines, products]);
 
   async function saveMemo(event) {
     event.preventDefault();
@@ -193,6 +236,10 @@ export default function AdminPos() {
     }
     if (!phone.trim()) {
       toast.error(t.phoneMissing);
+      return;
+    }
+    if (!deliveryChannel) {
+      toast.error(t.channelMissing);
       return;
     }
 
@@ -230,6 +277,9 @@ export default function AdminPos() {
       phone: phone.trim(),
       shop_name: name.trim() || (lang === 'bn' ? 'অফলাইন মেমো' : 'Offline memo'),
       delivery_address: address.trim() || null,
+      shipping_address: address.trim() || null,
+      delivery_channel: deliveryChannel,
+      transport_note: transportNote.trim() || null,
       subtotal: amount,
       total_amount: amount,
       status: 'confirmed',
@@ -240,14 +290,7 @@ export default function AdminPos() {
       items,
     };
 
-    let { data, error } = await supabase.from('orders').insert([payload]).select('id, order_number').single();
-    if (error && /sender_number/i.test(error.message || '')) {
-      const { sender_number: sentFrom, ...rest } = payload;
-      rest.payment_reference = sentFrom || null;
-      const retry = await supabase.from('orders').insert([rest]).select('id, order_number').single();
-      data = retry.data;
-      error = retry.error;
-    }
+    const { data, error } = await insertOrder(payload);
     if (error) {
       toast.error(isInsufficientStock(error) ? stockWarning(lang, lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product', 0) : t.failed);
       console.error(error);
@@ -267,7 +310,17 @@ export default function AdminPos() {
     }
 
     const memoNumber = data?.order_number || orderNumber;
-    setSaved({ number: memoNumber, total: amount, items, name, phone, address, method });
+    setSaved({
+      number: memoNumber,
+      total: amount,
+      items,
+      name,
+      phone,
+      address,
+      method,
+      deliveryChannel,
+      transportNote,
+    });
     setLines([]);
     setTransactionId('');
     setSenderNumber('');
@@ -284,7 +337,7 @@ export default function AdminPos() {
       <style>body{font-family:sans-serif;padding:24px;color:#0f172a} table{width:100%;border-collapse:collapse} td,th{border:1px solid #e2e8f0;padding:8px;text-align:left} .total{text-align:right;font-size:18px;font-weight:700}</style>
       </head><body>
       <h1>ইউসুফ এন্টারপ্রাইজ</h1>
-      <p>${t.tracking}: ${saved.number}<br/>${saved.name || ''} · ${saved.phone || ''}<br/>${saved.address || ''}</p>
+      <p>${t.tracking}: ${saved.number}<br/>${saved.name || ''} · ${saved.phone || ''}<br/>${saved.address || ''}<br/>${t.transport}: ${deliveryChannelLabel(saved.deliveryChannel, lang) || '—'}<br/>${saved.transportNote || ''}</p>
       <table><thead><tr><th>${t.item}</th><th>${t.qty}</th><th>${t.line}</th></tr></thead><tbody>
       ${saved.items.map((item) => `<tr><td>${item.title}</td><td>${item.quantity}</td><td>৳${item.unitPrice * item.quantity}</td></tr>`).join('')}
       </tbody></table>
@@ -349,34 +402,17 @@ export default function AdminPos() {
               ) : (
                 <ul className="divide-y divide-slate-100">
                   {lines.map((line) => (
-                    <li key={line.key} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_7rem_8rem]">
-                      <div>
-                        <p className="text-sm font-bold text-ink">{line.title}</p>
-                        <p className="text-xs text-slate-500">{metaLabel(line) || '—'}</p>
-                        <button type="button" onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))} className="mt-1 text-xs font-bold text-red-600">
-                          {t.remove}
-                        </button>
-                      </div>
-                      <label className="text-[11px] font-bold text-slate-500">
-                        {t.rate}
-                        <input
-                          type="number"
-                          min="0"
-                          value={line.unitPrice}
-                          onChange={(e) => updateLine(line.key, { unitPrice: Number(e.target.value) })}
-                          className={`${field} mt-1`}
-                        />
-                      </label>
-                      <div>
-                        <p className="text-[11px] font-bold text-slate-500">{t.qty}</p>
-                        <div className="mt-1 flex items-center gap-1">
-                          <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 transition-all duration-200" onClick={() => changeQty(line, Math.max(1, line.quantity - 1))}>−</button>
-                          <span className="w-8 text-center text-sm font-bold">{line.quantity}</span>
-                          <button type="button" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 transition-all duration-200" onClick={() => changeQty(line, line.quantity + 1)}>+</button>
-                        </div>
-                        <p className="mt-1 text-right text-sm font-extrabold">{formatTaka(line.unitPrice * line.quantity, lang)}</p>
-                      </div>
-                    </li>
+                    <PosLine
+                      key={line.key}
+                      line={line}
+                      lang={lang}
+                      t={t}
+                      field={field}
+                      maxQty={lineMax(line)}
+                      onQty={(qty) => updateLine(line.key, { quantity: qty })}
+                      onPrice={(unitPrice) => updateLine(line.key, { unitPrice })}
+                      onRemove={() => setLines((current) => current.filter((item) => item.key !== line.key))}
+                    />
                   ))}
                 </ul>
               )}
@@ -385,6 +421,14 @@ export default function AdminPos() {
                 <input className={field} placeholder={t.customer} value={name} onChange={(e) => setName(e.target.value)} />
                 <input className={field} required placeholder={t.phone} value={phone} onChange={(e) => setPhone(e.target.value)} />
                 <input className={field} placeholder={t.address} value={address} onChange={(e) => setAddress(e.target.value)} />
+                <DeliveryChannelFields
+                  lang={lang}
+                  channel={deliveryChannel}
+                  note={transportNote}
+                  onChannel={setDeliveryChannel}
+                  onNote={setTransportNote}
+                  fieldClass={field}
+                />
               </div>
 
               <p className="mb-2 mt-4 text-xs font-bold text-slate-500">{t.payment}</p>

@@ -25,7 +25,11 @@ export function sizeSortValue(label) {
   return match ? Number(match[1]) : Number.POSITIVE_INFINITY
 }
 
+export const SERIES_OPTIONS = ['PVC', 'Nylon', 'TPR', 'PU', 'Copper Wood', 'Copper Black', 'CP Wood', 'CP Black']
+
 export function productSizes(product) {
+  const explicit = formatSizeLabel(product?.size)
+  if (explicit) return [explicit]
   const fromVariants = (product?.product_variants || [])
     .map((variant) => formatSizeLabel(variant.size))
     .filter(Boolean)
@@ -67,6 +71,17 @@ export function matchesSize(product, size) {
 export function matchesSeries(product, series) {
   if (!series || series === 'all') return true
   return productSeries(product) === series
+}
+
+export function availableUnits(product, variant) {
+  if (variant) return Number(variant.stock) || 0
+  return Number(product?.stock) || 0
+}
+
+export function priceUnitLabel(product, lang = 'bn') {
+  const text = `${product?.unit || ''} ${product?.name || ''} ${product?.title || ''}`
+  if (/ডজন|dozen/i.test(text)) return lang === 'bn' ? '/ ডজন' : '/ dozen'
+  return lang === 'bn' ? '/ পিস' : '/ pc'
 }
 
 export function productSearchText(product) {

@@ -84,13 +84,44 @@ export function applyStockEvent(products, detail) {
   })
 }
 
+let stockChannel = null
+let stockListeners = 0
+
+function ensureStockChannel() {
+  if (stockChannel || typeof window === 'undefined') return
+  stockChannel = supabase
+    .channel('products-stock')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'products' },
+      (payload) => {
+        const row = payload.new
+        if (!row?.id) return
+        publishAbsoluteStock({ [row.id]: Number(row.stock) || 0 })
+      },
+    )
+    .subscribe()
+}
+
+function releaseStockChannel() {
+  if (stockListeners > 0 || !stockChannel) return
+  supabase.removeChannel(stockChannel)
+  stockChannel = null
+}
+
 export function useLiveStock(setProducts) {
   useEffect(() => {
     const onStock = (event) => {
       setProducts((current) => applyStockEvent(current, event.detail))
     }
     window.addEventListener(STOCK_EVENT, onStock)
-    return () => window.removeEventListener(STOCK_EVENT, onStock)
+    stockListeners += 1
+    ensureStockChannel()
+    return () => {
+      window.removeEventListener(STOCK_EVENT, onStock)
+      stockListeners -= 1
+      releaseStockChannel()
+    }
   }, [setProducts])
 }
 

@@ -1,6 +1,13 @@
 -- Bi-directional stock sync for website orders and offline memos.
 -- Run this once in the Supabase SQL editor.
 -- Safe to re-run: holds are inserted only when missing, so stock is not deducted twice.
+--
+-- Behaviour:
+--   insert / reactivate  -> stock = stock - quantity
+--   cancel / fail        -> stock = stock + held quantity
+--   item qty edit        -> stock = stock - (new_qty - old_qty)
+--   oversell             -> exception INSUFFICIENT_STOCK:<product_id>:<available>
+--   delete active order  -> restore held pieces, then the row may be deleted
 
 create table if not exists public.order_stock_holds (
   order_id uuid not null references public.orders(id) on delete restrict,
@@ -85,12 +92,14 @@ begin
     v_payment := coalesce(p_payment_status, '');
   end if;
 
+  -- Always sync when line items reference a product, or a hold already exists.
   select exists (
     select 1 from public.order_stock_holds h where h.order_id = p_order_id
   ) or exists (
     select 1
     from jsonb_array_elements(coalesce(v_items, '[]'::jsonb)) elem
-    where lower(coalesce(elem->>'stockTracked', '')) in ('true', 't', '1')
+    where (elem->>'productId') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+       or lower(coalesce(elem->>'stockTracked', '')) in ('true', 't', '1')
   )
   into v_managed;
 
@@ -138,7 +147,7 @@ begin
     order by c.product_id
   loop
     if rec.desired > rec.held and rec.stock < (rec.desired - rec.held) then
-      raise exception 'INSUFFICIENT_STOCK:%', rec.product_id using errcode = 'P0001';
+      raise exception 'INSUFFICIENT_STOCK:%:%', rec.product_id, rec.stock using errcode = 'P0001';
     end if;
     v_changes := v_changes || jsonb_build_array(
       jsonb_build_object(

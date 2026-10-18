@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabaseClient';
@@ -6,6 +6,9 @@ import { useLanguage } from '../../context/LanguageContext';
 import { EmptyState } from '../../components/EmptyState';
 import { BackButton } from '../../components/BackButton';
 import { LanguageToggle } from '../../components/LanguageToggle';
+import { ProductFormDrawer } from '../../components/ProductFormDrawer';
+import { insertProductRow, updateProductRow } from '../../lib/orderInsert';
+import { productSearchText, productSeries, productSizes } from '../../lib/productMeta';
 import { useLiveStock } from '../../lib/stockSync';
 
 const copy = {
@@ -22,11 +25,14 @@ const copy = {
     stock: 'শুরুর স্টক (পিস)',
     image: 'ছবির লিংক',
     description: 'বিবরণ',
-    add: 'ওয়েবসাইটে যোগ করুন',
+    add: 'নতুন প্রোডাক্ট যোগ করুন / Add Product',
     adding: 'যোগ হচ্ছে...',
     required: 'পণ্যের নাম, দাম এবং ক্যাটাগরি দিন।',
     added: 'পণ্য যোগ হয়েছে',
+    updated: 'পণ্য হালনাগাদ হয়েছে',
     addError: 'পণ্য যোগ হয়নি',
+    edit: 'এডিট',
+    searchProducts: 'নাম, সাইজ বা সিরিজ খুঁজুন',
     stockError: 'মজুদ হালনাগাদ হয়নি',
     live: 'বর্তমান মজুদ ও দৃশ্যমানতা',
     product: 'পণ্য',
@@ -60,11 +66,14 @@ const copy = {
     stock: 'Opening stock (pcs)',
     image: 'Image URL',
     description: 'Description',
-    add: 'Add product to website',
+    add: 'Add Product / নতুন প্রোডাক্ট যোগ করুন',
     adding: 'Adding...',
     required: 'Product name, price, and category are required.',
     added: 'Product added',
+    updated: 'Product updated',
     addError: 'Could not add product',
+    edit: 'Edit',
+    searchProducts: 'Search name, size, or series',
     stockError: 'Stock update failed',
     live: 'Live stock & visibility',
     product: 'Product',
@@ -201,14 +210,8 @@ export default function AdminProducts() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const [name, setName] = useState('');
-  const [productCode, setProductCode] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [price, setPrice] = useState('');
-  const [stock, setStock] = useState('50');
-  const [description, setDescription] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [query, setQuery] = useState('');
+  const [drawer, setDrawer] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   useLiveStock(setProducts);
 
@@ -216,10 +219,7 @@ export default function AdminProducts() {
     setLoading(true);
 
     const { data: catData } = await supabase.from('categories').select('*');
-    if (catData) {
-      setCategories(catData);
-      if (catData.length > 0 && !categoryId) setCategoryId(catData[0].id);
-    }
+    if (catData) setCategories(catData);
 
     const { data: prodData } = await supabase
       .from('products')
@@ -281,43 +281,45 @@ export default function AdminProducts() {
     }
   };
 
-  const handleAddProduct = async (e) => {
-    e.preventDefault();
-    if (!name || !price || !categoryId) {
+  const visibleProducts = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return products;
+    return products.filter((product) => productSearchText(product).includes(needle));
+  }, [products, query]);
+
+  const saveProduct = useCallback(async (payload) => {
+    if (!payload.name || !Number.isFinite(payload.price) || !payload.category_id) {
       toast.error(t.required);
       return;
     }
-
     setSubmitting(true);
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .insert([
-          {
-            name: name.trim(),
-            product_code: productCode.trim() || 'WHOLESALE',
-            category_id: categoryId,
-            price: Number(price),
-            stock: Number(stock) || 0,
-            description: description.trim(),
-            image_url: imageUrl.trim() || '/wheels.png',
-            is_active: true,
-          },
-        ])
-        .select('*, categories(name)')
-        .single();
-
-      if (error) {
-        toast.error(t.addError + ': ' + error.message);
-      } else if (data) {
-        setProducts([data, ...products]);
-        setName('');
-        setProductCode('');
-        setPrice('');
-        setStock('50');
-        setDescription('');
-        setImageUrl('');
-        toast.success(t.added);
+      const body = {
+        ...payload,
+        product_code: payload.product_code || 'WHOLESALE',
+        image_url: payload.image_url || '/wheels.png',
+      };
+      if (drawer?.id) {
+        const previous = products.find((item) => item.id === drawer.id);
+        setProducts((rows) => rows.map((item) => (item.id === drawer.id ? { ...item, ...body } : item)));
+        const { data, error } = await updateProductRow(drawer.id, body);
+        if (error) {
+          if (previous) setProducts((rows) => rows.map((item) => (item.id === drawer.id ? previous : item)));
+          toast.error(error.message);
+        } else if (data) {
+          setProducts((rows) => rows.map((item) => (item.id === data.id ? data : item)));
+          toast.success(t.updated);
+          setDrawer(null);
+        }
+      } else {
+        const { data, error } = await insertProductRow(body);
+        if (error) {
+          toast.error(t.addError + ': ' + error.message);
+        } else if (data) {
+          setProducts((rows) => [data, ...rows]);
+          toast.success(t.added);
+          setDrawer(null);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -325,7 +327,7 @@ export default function AdminProducts() {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [drawer, products, t]);
 
   const actionBtn =
     'inline-flex min-h-11 items-center rounded-xl border border-stone-200 bg-white px-3 text-xs font-bold transition-all duration-200 hover:bg-sand';
@@ -347,6 +349,13 @@ export default function AdminProducts() {
             <LanguageToggle />
             <button
               type="button"
+              onClick={() => setDrawer({})}
+              className="inline-flex min-h-11 items-center rounded-xl bg-brass px-4 text-xs font-bold text-white transition-all duration-150 transform-gpu active:scale-95"
+            >
+              {t.add}
+            </button>
+            <button
+              type="button"
               onClick={fetchData}
               className="inline-flex min-h-11 items-center rounded-xl bg-ink px-4 text-xs font-bold text-white transition-all duration-200"
             >
@@ -355,53 +364,14 @@ export default function AdminProducts() {
           </div>
         </div>
 
-        <form
-          onSubmit={handleAddProduct}
-          className="mb-5 rounded-3xl border border-stone-200 bg-white p-5 shadow-sm"
-        >
-          <h2 className="text-lg font-extrabold text-ink">{t.addTitle}</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <label className="block text-xs font-bold text-stone-600">
-              {t.name}
-              <input className={`${fieldClass} mt-1`} required value={name} onChange={(e) => setName(e.target.value)} placeholder={lang === 'bn' ? 'হেভি ডিউটি চাকা' : 'Heavy duty castor wheel'} />
-            </label>
-            <label className="block text-xs font-bold text-stone-600">
-              {t.category}
-              <select className={`${fieldClass} mt-1`} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-xs font-bold text-stone-600">
-              {t.code}
-              <input className={`${fieldClass} mt-1`} value={productCode} onChange={(e) => setProductCode(e.target.value)} placeholder="WHL-001" />
-            </label>
-            <label className="block text-xs font-bold text-stone-600">
-              {t.price}
-              <input className={`${fieldClass} mt-1`} type="number" required value={price} onChange={(e) => setPrice(e.target.value)} placeholder="80" />
-            </label>
-            <label className="block text-xs font-bold text-stone-600">
-              {t.stock}
-              <input className={`${fieldClass} mt-1`} type="number" value={stock} onChange={(e) => setStock(e.target.value)} />
-            </label>
-            <label className="block text-xs font-bold text-stone-600">
-              {t.image}
-              <input className={`${fieldClass} mt-1`} value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="/wheels.png" />
-            </label>
-            <label className="block text-xs font-bold text-stone-600 sm:col-span-2 lg:col-span-3">
-              {t.description}
-              <input className={`${fieldClass} mt-1`} value={description} onChange={(e) => setDescription(e.target.value)} />
-            </label>
-          </div>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-4 inline-flex h-12 items-center rounded-2xl bg-ink px-5 text-sm font-bold text-white transition-all duration-200 disabled:cursor-not-allowed disabled:bg-stone-400"
-          >
-            {submitting ? t.adding : t.add}
-          </button>
-        </form>
+        <div className="mb-4">
+          <input
+            className={fieldClass}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t.searchProducts}
+          />
+        </div>
 
         <section className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm">
           <div className="border-b border-stone-100 px-5 py-4">
@@ -414,14 +384,14 @@ export default function AdminProducts() {
                 <div key={i} className="h-28 animate-pulse rounded-2xl bg-stone-200/80" />
               ))}
             </div>
-          ) : products.length === 0 ? (
+          ) : visibleProducts.length === 0 ? (
             <div className="p-4">
               <EmptyState icon="📦" title={t.empty} />
             </div>
           ) : (
             <>
               <div className="block space-y-3 p-4 md:hidden">
-                {products.map((p) => {
+                {visibleProducts.map((p) => {
                   const isOut = (Number(p.stock) || 0) <= 0;
                   return (
                     <article key={p.id} className="rounded-2xl border border-stone-200 bg-sand p-4">
@@ -429,6 +399,9 @@ export default function AdminProducts() {
                         <div>
                           <h3 className="font-extrabold text-ink">{p.name}</h3>
                           <p className="mt-1 text-xs text-stone-500">{p.categories?.name || (lang === 'bn' ? 'হার্ডওয়্যার' : 'Hardware')} · {p.product_code || (lang === 'bn' ? 'পাইকারি' : 'Wholesale')}</p>
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                            {[productSizes(p)[0], productSeries(p)].filter(Boolean).join(' · ') || '—'}
+                          </p>
                         </div>
                         <RateEditor
                           price={p.price}
@@ -444,13 +417,22 @@ export default function AdminProducts() {
                       <div className="mt-3">
                         <StockActions onAdjust={(amount) => adjustStock(p.id, p.stock, amount)} />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleActive(p.id, p.is_active)}
-                        className={`mt-3 inline-flex h-11 items-center rounded-xl px-4 text-xs font-bold text-white transition-all duration-200 ${p.is_active ? 'bg-ink' : 'bg-stone-400'}`}
-                      >
-                        {p.is_active ? t.active : t.hidden}
-                      </button>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDrawer(p)}
+                          className="inline-flex h-11 items-center rounded-xl bg-brass px-4 text-xs font-bold text-white transition-all duration-150 transform-gpu active:scale-95"
+                        >
+                          ✏️ {t.edit} / এডিট
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleActive(p.id, p.is_active)}
+                          className={`inline-flex h-11 items-center rounded-xl px-4 text-xs font-bold text-white transition-all duration-200 ${p.is_active ? 'bg-ink' : 'bg-stone-400'}`}
+                        >
+                          {p.is_active ? t.active : t.hidden}
+                        </button>
+                      </div>
                     </article>
                   );
                 })}
@@ -470,11 +452,27 @@ export default function AdminProducts() {
                     </tr>
                   </thead>
                   <tbody>
-                    {products.map((p) => {
+                    {visibleProducts.map((p) => {
                       const isOut = (Number(p.stock) || 0) <= 0;
                       return (
                         <tr key={p.id} className="border-t border-stone-100">
-                          <td className="px-5 py-3 font-bold text-ink">{p.name}</td>
+                          <td className="px-5 py-3 font-bold text-ink">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={p.image_url || '/wheels.png'}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                className="h-12 w-12 rounded-xl object-cover"
+                              />
+                              <div>
+                                <p>{p.name}</p>
+                                <p className="text-[11px] font-semibold text-slate-500">
+                                  {[productSizes(p)[0], productSeries(p)].filter(Boolean).join(' · ') || '—'}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
                           <td className="px-3 py-3 text-stone-500">{p.categories?.name || (lang === 'bn' ? 'হার্ডওয়্যার' : 'Hardware')}</td>
                           <td className="px-3 py-3">
                             <span className="rounded-md bg-stone-100 px-2 py-1 text-[11px] font-bold text-stone-600">
@@ -496,7 +494,16 @@ export default function AdminProducts() {
                             </span>
                           </td>
                           <td className="px-3 py-3">
-                            <StockActions onAdjust={(amount) => adjustStock(p.id, p.stock, amount)} />
+                            <div className="flex flex-col gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setDrawer(p)}
+                                className="inline-flex h-11 items-center justify-center rounded-xl bg-brass px-3 text-xs font-bold text-white transition-all duration-150 transform-gpu active:scale-95"
+                              >
+                                ✏️ {t.edit} / এডিট
+                              </button>
+                              <StockActions onAdjust={(amount) => adjustStock(p.id, p.stock, amount)} />
+                            </div>
                           </td>
                           <td className="px-5 py-3 text-center">
                             <button
@@ -517,6 +524,16 @@ export default function AdminProducts() {
           )}
         </section>
       </div>
+      {drawer && (
+        <ProductFormDrawer
+          lang={lang}
+          product={drawer.id ? drawer : null}
+          categories={categories}
+          submitting={submitting}
+          onClose={() => setDrawer(null)}
+          onSubmit={saveProduct}
+        />
+      )}
     </div>
   );
 }

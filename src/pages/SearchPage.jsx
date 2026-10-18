@@ -1,49 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabaseClient'
 import { useLanguage } from '../context/LanguageContext'
 import { ProductSkeleton } from '../components/Skeletons'
 import { EmptyState } from '../components/EmptyState'
 import { BackButton } from '../components/BackButton'
 import { ProductCard } from '../components/ProductCard'
-import { useLiveStock } from '../lib/stockSync'
+import { useCatalog } from '../lib/useCatalog'
+import { productSearchText } from '../lib/productMeta'
 
 export function SearchPage() {
   const [params] = useSearchParams()
   const q = (params.get('q') || '').trim()
   const { t } = useLanguage()
-  const [products, setProducts] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [searched, setSearched] = useState(false)
-  useLiveStock(setProducts)
+  const { products: catalog, loading } = useCatalog()
 
-  useEffect(() => {
-    let cancelled = false
-    async function run() {
-      if (!q) {
-        setProducts([])
-        setSearched(false)
-        setLoading(false)
-        return
-      }
-      setLoading(true)
-      setSearched(true)
-      const { data } = await supabase
-        .from('products')
-        .select('*, product_variants(*), categories(slug, name)')
-        .eq('is_active', true)
-        .ilike('name', `%${q}%`)
-        .limit(40)
-      if (!cancelled) {
-        setProducts(data || [])
-        setLoading(false)
-      }
-    }
-    run()
-    return () => {
-      cancelled = true
-    }
-  }, [q])
+  const products = useMemo(() => {
+    if (!q) return []
+    const needle = q.toLowerCase()
+    return catalog.filter((product) => productSearchText(product).includes(needle))
+  }, [catalog, q])
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
@@ -56,10 +31,10 @@ export function SearchPage() {
           <ProductSkeleton />
         ) : !q ? (
           <EmptyState icon="🔎" title={t.search} body={t.searchHint} />
-        ) : searched && products.length === 0 ? (
+        ) : products.length === 0 ? (
           <EmptyState icon="🔎" title={t.searchEmpty} body={t.searchHint} />
         ) : (
-          <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
             {products.map((prod) => (
               <ProductCard key={prod.id} product={prod} slug={prod.categories?.slug} />
             ))}

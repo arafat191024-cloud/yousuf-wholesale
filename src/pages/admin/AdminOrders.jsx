@@ -23,6 +23,7 @@ import {
   normalizePaymentStatus,
   paymentMethodLabel,
 } from '../../lib/paymentConfig';
+import { DELIVERY_CHANNELS, deliveryChannelLabel } from '../../lib/deliveryChannels';
 
 function showPaymentDetail(method, value) {
   return needsTransactionId(method) || Boolean(String(value || '').trim());
@@ -376,7 +377,10 @@ export default function AdminOrders() {
             <div>
               <strong>দোকানের নাম:</strong> ${order.shop_name || 'N/A'}<br/>
               <strong>প্রোপ্রাইটর:</strong> ${order.customer_name || 'Wholesale Client'}<br/>
-              <strong>ফোন:</strong> ${order.phone}
+              <strong>ফোন:</strong> ${order.phone}<br/>
+              <strong>ঠিকানা:</strong> ${order.shipping_address || order.delivery_address || '—'}<br/>
+              <strong>পরিবহন:</strong> ${deliveryChannelLabel(order.delivery_channel, lang) || '—'}<br/>
+              <strong>বুকিং নোট:</strong> ${order.transport_note || '—'}
             </div>
             <div style="text-align: right;">
               <strong>মেমো নং:</strong> #${order.order_number || String(order.id).slice(0, 8)}<br/>
@@ -440,6 +444,8 @@ export default function AdminOrders() {
       transaction_id: editingOrder.transaction_id || null,
       sender_number: editingOrder.sender_number || null,
       payment_reference: editingOrder.payment_reference || null,
+      delivery_channel: editingOrder.delivery_channel || null,
+      transport_note: editingOrder.transport_note || null,
       items: editingOrder.items,
       total_amount: recalculatedTotal
     };
@@ -540,6 +546,17 @@ export default function AdminOrders() {
                         </div>
                         <h3 className="mt-2 text-lg font-extrabold text-ink">{order.shop_name || order.customer_name}</h3>
                         <div className="text-sm font-semibold text-blue-700">📞 {order.phone}</div>
+                        {(order.shipping_address || order.delivery_address) && (
+                          <p className="mt-1 text-sm text-slate-600">{order.shipping_address || order.delivery_address}</p>
+                        )}
+                        {order.delivery_channel && (
+                          <p className="mt-1 text-sm font-semibold text-ink">
+                            {lang === 'bn' ? 'পরিবহন' : 'Transport'}: {deliveryChannelLabel(order.delivery_channel, lang)}
+                          </p>
+                        )}
+                        {order.transport_note && (
+                          <p className="text-xs font-semibold text-slate-500">{order.transport_note}</p>
+                        )}
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-extrabold text-ink">৳{Number(order.total_amount || 0).toLocaleString()}</div>
@@ -736,6 +753,24 @@ export default function AdminOrders() {
                   placeholder={t.receipt}
                   value={editingOrder.payment_reference || ''}
                   onChange={(e) => setEditingOrder({ ...editingOrder, payment_reference: e.target.value })}
+                />
+                <select
+                  value={editingOrder.delivery_channel || ''}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, delivery_channel: e.target.value })}
+                  className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm"
+                >
+                  <option value="">{lang === 'bn' ? 'পরিবহন মাধ্যম' : 'Delivery transport'}</option>
+                  {DELIVERY_CHANNELS.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {lang === 'bn' ? item.bn : item.en}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="h-11 rounded-xl border border-stone-200 px-3 text-sm"
+                  placeholder={lang === 'bn' ? 'শাখা বা বুকিং নোট' : 'Branch or booking note'}
+                  value={editingOrder.transport_note || ''}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, transport_note: e.target.value })}
                 />
               </div>
 

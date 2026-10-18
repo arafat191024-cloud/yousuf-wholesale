@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useCart } from '../context/CartContext'
@@ -8,7 +8,12 @@ import { supabase } from '../lib/supabaseClient'
 import { BackButton } from '../components/BackButton'
 import { CartLines } from '../components/CartLines'
 import { EmptyState } from '../components/EmptyState'
+import { SearchableSelect } from '../components/SearchableSelect'
+import { DeliveryChannelFields } from '../components/DeliveryChannelFields'
 import { formatTaka } from '../lib/format'
+import { districtOptions, upazilaOptions } from '../data/bangladeshGeo'
+import { formatShippingAddress } from '../lib/deliveryChannels'
+import { insertOrder } from '../lib/orderInsert'
 import {
   PAYMENT_ACCOUNTS,
   accountDisplayName,
@@ -43,6 +48,10 @@ export function Checkout() {
   const [customerPhone, setCustomerPhone] = useState(() => readDraft('ck_phone', localStorage.getItem('last_order_phone') || ''))
   const [customerShop, setCustomerShop] = useState(() => readDraft('ck_shop'))
   const [customerAddress, setCustomerAddress] = useState(() => readDraft('ck_address'))
+  const [district, setDistrict] = useState(() => readDraft('ck_district'))
+  const [upazila, setUpazila] = useState(() => readDraft('ck_upazila'))
+  const [deliveryChannel, setDeliveryChannel] = useState(() => readDraft('ck_channel'))
+  const [transportNote, setTransportNote] = useState(() => readDraft('ck_note'))
   const [paymentMethod, setPaymentMethod] = useState(() => readDraft('ck_method', 'cod'))
   const [transactionId, setTransactionId] = useState('')
   const [senderNumber, setSenderNumber] = useState('')
@@ -55,8 +64,12 @@ export function Checkout() {
     sessionStorage.setItem('ck_phone', customerPhone)
     sessionStorage.setItem('ck_shop', customerShop)
     sessionStorage.setItem('ck_address', customerAddress)
+    sessionStorage.setItem('ck_district', district)
+    sessionStorage.setItem('ck_upazila', upazila)
+    sessionStorage.setItem('ck_channel', deliveryChannel)
+    sessionStorage.setItem('ck_note', transportNote)
     sessionStorage.setItem('ck_method', paymentMethod)
-  }, [customerName, customerPhone, customerShop, customerAddress, paymentMethod])
+  }, [customerName, customerPhone, customerShop, customerAddress, district, upazila, deliveryChannel, transportNote, paymentMethod])
 
   useEffect(() => {
     if (profile?.name) setCustomerName((value) => value || profile.name)
@@ -66,6 +79,8 @@ export function Checkout() {
 
   const showPrepaid = needsTransactionId(paymentMethod)
   const fieldClass = 'h-11 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-sm outline-none transition-all duration-200 ease-out focus:border-ink focus:shadow-sm'
+  const districts = useMemo(() => districtOptions(lang), [lang])
+  const areas = useMemo(() => upazilaOptions(district, lang), [district, lang])
 
   async function copyText(value) {
     try {
@@ -92,6 +107,16 @@ export function Checkout() {
       toast.error(t.senderMissing)
       return
     }
+    if (!district || !upazila) {
+      toast.error(lang === 'bn' ? 'জেলা ও এরিয়া/উপজেলা নির্বাচন করুন।' : 'Select district and upazila / area.')
+      return
+    }
+    if (!deliveryChannel) {
+      toast.error(lang === 'bn' ? 'ডেলিভারি চ্যানেল নির্বাচন করুন।' : 'Select a delivery transport channel.')
+      return
+    }
+
+    const shippingAddress = formatShippingAddress({ district, upazila, detail: customerAddress })
 
     setSubmitting(true)
     try {
@@ -115,7 +140,10 @@ export function Checkout() {
         customer_name: customerName.trim() || (lang === 'bn' ? 'পাইকারি ক্রেতা' : 'Wholesale client'),
         phone: customerPhone.trim(),
         shop_name: customerShop.trim() || customerAddress.trim() || (lang === 'bn' ? 'উল্লেখ নেই' : 'Not specified'),
-        delivery_address: customerAddress.trim() || null,
+        delivery_address: shippingAddress || null,
+        shipping_address: shippingAddress || null,
+        delivery_channel: deliveryChannel,
+        transport_note: transportNote.trim() || null,
         subtotal: totalAmount,
         total_amount: totalAmount,
         status: 'pending',
@@ -128,14 +156,7 @@ export function Checkout() {
       }
       if (userId) payload.user_id = userId
 
-      let { data, error } = await supabase.from('orders').insert([payload]).select().single()
-      if (error && /sender_number/i.test(error.message || '')) {
-        const { sender_number: sentFrom, ...rest } = payload
-        rest.payment_reference = [sentFrom, rest.payment_reference].filter(Boolean).join(' · ') || null
-        const retry = await supabase.from('orders').insert([rest]).select().single()
-        data = retry.data
-        error = retry.error
-      }
+      let { data, error } = await insertOrder(payload)
       if (error) {
         toast.error(isInsufficientStock(error) ? stockWarning(lang, lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product', 0) : t.orderError)
         console.error(error)
@@ -241,7 +262,43 @@ export function Checkout() {
             <input className={fieldClass} placeholder={t.shopNameField} value={customerShop} onChange={(e) => setCustomerShop(e.target.value)} />
             <input className={fieldClass} placeholder={t.yourName} value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
             <input className={fieldClass} type="tel" required placeholder={t.phoneRequired} value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
-            <input className={fieldClass} placeholder={t.address} value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+            <SearchableSelect
+              required
+              label={lang === 'bn' ? 'জেলা' : 'District / জেলা'}
+              value={district}
+              onChange={(value) => {
+                setDistrict(value)
+                setUpazila('')
+              }}
+              options={districts}
+              placeholder={lang === 'bn' ? 'জেলা খুঁজুন / বাছুন' : 'Search district'}
+              searchPlaceholder={lang === 'bn' ? 'জেলার নাম লিখুন...' : 'Type a district...'}
+            />
+            <SearchableSelect
+              required
+              label={lang === 'bn' ? 'উপজেলা/থানা' : 'Upazila / Thana'}
+              value={upazila}
+              onChange={setUpazila}
+              options={areas}
+              disabled={!district}
+              placeholder={lang === 'bn' ? 'উপজেলা/থানা বাছুন' : 'Select upazila / thana'}
+              searchPlaceholder={lang === 'bn' ? 'এরিয়া খুঁজুন...' : 'Search area...'}
+            />
+            <input className={fieldClass} placeholder={lang === 'bn' ? 'বিস্তারিত ঠিকানা (বাড়ি, রোড, মার্কেট)' : 'Detailed address (house, road, market)'} value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+          </div>
+        </section>
+
+        <section className="premium-card rounded-3xl p-4">
+          <h2 className="text-sm font-extrabold text-ink">{lang === 'bn' ? 'ডেলিভারি চ্যানেল' : 'Delivery transport'}</h2>
+          <div className="mt-3">
+            <DeliveryChannelFields
+              lang={lang}
+              channel={deliveryChannel}
+              note={transportNote}
+              onChannel={setDeliveryChannel}
+              onNote={setTransportNote}
+              fieldClass={fieldClass}
+            />
           </div>
         </section>
 

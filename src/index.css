@@ -68,3 +68,67 @@ a {
 .premium-card:hover {
   box-shadow: 0 10px 28px rgb(15 23 42 / 0.08);
 }
+
+.dual-range {
+  position: relative;
+  height: 1.75rem;
+}
+
+.dual-range .dual-track {
+  position: absolute;
+  top: 0.7rem;
+  right: 0;
+  left: 0;
+  height: 4px;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.dual-range input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.dual-range input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  pointer-events: auto;
+  height: 18px;
+  width: 18px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: #0f172a;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.28);
+  cursor: pointer;
+}
+
+.dual-range input[type='range']::-moz-range-thumb {
+  pointer-events: auto;
+  height: 18px;
+  width: 18px;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: #0f172a;
+  cursor: pointer;
+}
+
+.filter-acc > summary {
+  list-style: none;
+}
+
+.filter-acc > summary::-webkit-details-marker {
+  display: none;
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.sheet-up {
+  animation: sheet-up 180ms ease-out;
+}

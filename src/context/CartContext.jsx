@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import { STOCK_EVENT } from '../lib/stockSync';
 
 const CartContext = createContext();
 
@@ -16,8 +17,22 @@ export function CartProvider({ children }) {
     localStorage.setItem('wholesale_cart', JSON.stringify(cartItems));
   }, [cartItems]);
 
-  const addToCart = (product, variant, quantity) => {
-    const safeQty = Math.max(1, Number(quantity) || 1);
+  useEffect(() => {
+    const onStock = (event) => {
+      const absolute = event.detail?.absolute;
+      if (!absolute) return;
+      setCartItems((items) =>
+        items.map((item) => (absolute[item.productId] === undefined ? item : { ...item, stock: absolute[item.productId] })),
+      );
+    };
+    window.addEventListener(STOCK_EVENT, onStock);
+    return () => window.removeEventListener(STOCK_EVENT, onStock);
+  }, []);
+
+  const addToCart = useCallback((product, variant, quantity) => {
+    const stock = Number(variant ? variant.stock : product.stock) || 0;
+    let safeQty = Math.max(1, Number(quantity) || 1);
+    if (stock > 0) safeQty = Math.min(safeQty, stock);
     const itemKey = variant ? `${product.id}-${variant.id}` : `${product.id}-default`;
     const unitPrice = Number(variant ? variant.price : product.price) || 0;
     const title = variant ? `${product.name} (${variant.size})` : product.name;
@@ -28,9 +43,17 @@ export function CartProvider({ children }) {
     setCartItems((prev) => {
       const existing = prev.find((item) => item.key === itemKey);
       if (existing) {
+        const nextQty = existing.quantity + safeQty;
         return prev.map((item) =>
           item.key === itemKey
-            ? { ...item, quantity: item.quantity + safeQty, image: item.image || image, lotSize, size: item.size || size }
+            ? {
+                ...item,
+                quantity: stock > 0 ? Math.min(nextQty, stock) : nextQty,
+                image: item.image || image,
+                lotSize,
+                size: item.size || size,
+                stock,
+              }
             : item
         );
       }
@@ -47,6 +70,7 @@ export function CartProvider({ children }) {
           image,
           lotSize,
           size,
+          stock,
         },
       ];
     });
@@ -60,46 +84,61 @@ export function CartProvider({ children }) {
       lotSize,
       size,
       productCode: product.product_code || '',
+      stock,
     });
     setAddedOpen(true);
-  };
+  }, []);
 
-  const removeFromCart = (itemKey) => {
+  const removeFromCart = useCallback((itemKey) => {
     setCartItems((prev) => prev.filter((item) => item.key !== itemKey));
-  };
+  }, []);
 
-  const updateQuantity = (itemKey, quantity) => {
+  const updateQuantity = useCallback((itemKey, quantity) => {
     if (quantity <= 0) {
       removeFromCart(itemKey);
       return;
     }
     setCartItems((prev) =>
-      prev.map((item) => (item.key === itemKey ? { ...item, quantity } : item))
+      prev.map((item) => {
+        if (item.key !== itemKey) return item;
+        const cap = Number(item.stock);
+        const next = Number.isFinite(cap) && cap > 0 ? Math.min(quantity, cap) : quantity;
+        return { ...item, quantity: next };
+      })
     );
-  };
+  }, [removeFromCart]);
 
-  const clearCart = () => setCartItems([]);
+  const clearCart = useCallback(() => setCartItems([]), []);
 
-  const totalAmount = cartItems.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
-  const totalCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+  const totalAmount = useMemo(
+    () => cartItems.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0),
+    [cartItems],
+  );
+  const totalCount = useMemo(
+    () => cartItems.reduce((acc, item) => acc + item.quantity, 0),
+    [cartItems],
+  );
+
+  const value = useMemo(
+    () => ({
+      cartItems,
+      addToCart,
+      removeFromCart,
+      updateQuantity,
+      clearCart,
+      totalAmount,
+      totalCount,
+      isCartOpen,
+      setIsCartOpen,
+      addedOpen,
+      setAddedOpen,
+      addedItem,
+    }),
+    [addedItem, addedOpen, addToCart, cartItems, clearCart, isCartOpen, removeFromCart, totalAmount, totalCount, updateQuantity],
+  );
 
   return (
-    <CartContext.Provider
-      value={{
-        cartItems,
-        addToCart,
-        removeFromCart,
-        updateQuantity,
-        clearCart,
-        totalAmount,
-        totalCount,
-        isCartOpen,
-        setIsCartOpen,
-        addedOpen,
-        setAddedOpen,
-        addedItem,
-      }}
-    >
+    <CartContext.Provider value={value}>
       {children}
     </CartContext.Provider>
   );

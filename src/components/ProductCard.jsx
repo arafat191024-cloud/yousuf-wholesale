@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { useCart } from '../context/CartContext'
 import { useLanguage } from '../context/LanguageContext'
 import { formatTaka } from '../lib/format'
 import { fallbackImage } from '../lib/catalog'
 import { useScrollLock } from '../lib/useScrollLock'
+import { QtyStepper } from './QtyStepper'
+import { availableUnits, priceUnitLabel, productSeries, productSizes } from '../lib/productMeta'
 
-export function ProductCard({ product, slug }) {
+export const ProductCard = memo(function ProductCard({ product, slug }) {
   const { addToCart } = useCart()
   const { lang, t } = useLanguage()
   const variants = product.product_variants || []
@@ -16,24 +18,34 @@ export function ProductCard({ product, slug }) {
   useScrollLock(open)
 
   const price = variant ? variant.price : product.price
-  const stockQty = variant ? variant.stock : product.stock
-  const inStock = Number(stockQty) > 0
+  const stockQty = availableUnits(product, variant && variants.length ? variant : null)
+  const inStock = stockQty > 0
+  const unitLabel = priceUnitLabel(product, lang)
   const image = product.image_url || fallbackImage(slug)
   const lotTotal = Number(price || 0) * lotSize
+  const meta = [productSizes(product)[0], productSeries(product)].filter(Boolean).join(' · ')
 
-  function add(amount = qty) {
+  const add = useCallback((amount = qty) => {
     setOpen(false)
     addToCart(product, variant, amount)
-  }
+  }, [addToCart, product, qty, variant])
 
   return (
     <>
-      <article className="premium-card flex flex-col overflow-hidden rounded-2xl">
+      <article className="premium-card flex flex-col overflow-hidden rounded-2xl transition-all duration-150 transform-gpu active:scale-[0.99]">
         <button type="button" onClick={() => setOpen(true)} className="relative aspect-square overflow-hidden bg-slate-100 text-left">
-          <img src={image} alt={product.name} className="h-full w-full object-cover transition-all duration-200 ease-out hover:scale-[1.03]" />
+          <img
+            src={image}
+            alt={product.name}
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover transition-all duration-150 ease-out transform-gpu hover:scale-[1.03]"
+          />
           <div className="absolute left-2 top-2 flex max-w-[90%] flex-wrap gap-1">
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${inStock ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
-              {inStock ? t.inStock : t.outOfStock}
+              {inStock
+                ? (lang === 'bn' ? `স্টকে আছে · ${stockQty}` : `In Stock · ${stockQty}`)
+                : (lang === 'bn' ? 'স্টক শেষ' : 'Out of Stock')}
             </span>
             <span className="rounded-full bg-[#0F172A]/90 px-2 py-0.5 text-[10px] font-extrabold text-amber-200">
               {t.wholesaleRate}
@@ -44,17 +56,22 @@ export function ProductCard({ product, slug }) {
           <button type="button" onClick={() => setOpen(true)} className="text-left">
             <h3 className="line-clamp-2 min-h-[2.5rem] text-[13px] font-bold leading-snug text-ink sm:text-sm">{product.name}</h3>
           </button>
+          {meta && <p className="mt-0.5 line-clamp-1 text-[11px] font-semibold text-slate-500">{meta}</p>}
           <p className="mt-1 text-sm font-extrabold text-ink sm:text-base">
             {formatTaka(price, lang)}
-            <span className="ml-1 text-[11px] font-semibold text-slate-500">{t.perPiece}</span>
+            <span className="ml-1 text-[11px] font-semibold text-slate-500">{unitLabel}</span>
           </p>
           <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500">
             {t.minLot} {lotSize} {t.pcs}
           </p>
+          <div className="mt-2 flex justify-center">
+            <QtyStepper value={qty} min={1} max={inStock ? stockQty : 1} onChange={setQty} lang={lang} compact disabled={!inStock} />
+          </div>
           <button
             type="button"
-            onClick={() => add(lotSize)}
-            className="mt-2 inline-flex h-11 w-full items-center justify-center rounded-xl bg-ink px-2 text-xs font-bold text-white shadow-sm transition-all duration-200 ease-out hover:bg-navy hover:shadow-md"
+            onClick={() => add(qty)}
+            disabled={!inStock}
+            className="mt-2 inline-flex h-11 w-full items-center justify-center rounded-xl bg-ink px-2 text-xs font-bold text-white shadow-sm transition-all duration-150 ease-out transform-gpu active:scale-95 hover:bg-navy hover:shadow-md disabled:bg-slate-400"
           >
             {t.addToCart}
           </button>
@@ -74,19 +91,22 @@ export function ProductCard({ product, slug }) {
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="inline-flex h-11 items-center gap-1 rounded-full border border-slate-200/80 px-3 text-sm font-bold text-ink transition-all duration-200 ease-out hover:shadow-md"
+                className="inline-flex h-11 items-center gap-1 rounded-full border border-slate-200/80 px-3 text-sm font-bold text-ink transition-all duration-150 ease-out transform-gpu active:scale-95 hover:shadow-md"
               >
                 <span aria-hidden="true">←</span>
                 {t.back}
               </button>
               <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-extrabold text-brass">{t.importer}</span>
             </div>
-            <img src={image} alt="" className="h-64 w-full object-cover sm:h-72" />
+            <div className="aspect-square h-64 w-full sm:h-72">
+              <img src={image} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+            </div>
             <div className="space-y-4 px-4 py-4">
               {product.product_code && (
                 <span className="inline-flex rounded-md bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">{product.product_code}</span>
               )}
               <h2 className="text-xl font-extrabold text-ink">{product.name}</h2>
+              {meta && <p className="text-sm font-semibold text-slate-500">{meta}</p>}
               {product.description && <p className="text-sm leading-relaxed text-slate-500">{product.description}</p>}
 
               {variants.length > 0 && (
@@ -100,7 +120,7 @@ export function ProductCard({ product, slug }) {
                           key={item.id}
                           type="button"
                           onClick={() => setVariant(item)}
-                          className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition-all duration-200 ease-out ${
+                          className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition-all duration-150 ease-out transform-gpu active:scale-95 ${
                             selected ? 'bg-ink text-white' : 'border border-slate-200/80 bg-slate-50 text-ink'
                           }`}
                         >
@@ -117,7 +137,7 @@ export function ProductCard({ product, slug }) {
                   <p className="text-[11px] font-semibold text-slate-500">{t.wholesaleRate}</p>
                   <p className="text-2xl font-extrabold text-ink">
                     {formatTaka(price, lang)}
-                    <span className="ml-1 text-xs font-semibold text-slate-500">{t.perPiece}</span>
+                    <span className="ml-1 text-xs font-semibold text-slate-500">{unitLabel}</span>
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
                     {t.perCarton} ({lotSize} {t.pcs}): <span className="font-bold text-ink">{formatTaka(lotTotal, lang)}</span>
@@ -125,24 +145,15 @@ export function ProductCard({ product, slug }) {
                 </div>
                 <div className="text-right">
                   <p className="mb-1 text-[11px] font-semibold text-slate-500">{t.quantity}</p>
-                  <div className="flex items-center gap-1">
-                    <button type="button" aria-label={t.decrease} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200/80" onClick={() => setQty((n) => Math.max(1, n - 1))}>−</button>
-                    <input
-                      type="number"
-                      min="1"
-                      value={qty}
-                      onChange={(e) => setQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                      className="h-11 w-14 rounded-xl border border-slate-200/80 text-center text-sm font-bold outline-none"
-                    />
-                    <button type="button" aria-label={t.increase} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200/80" onClick={() => setQty((n) => n + 1)}>+</button>
-                  </div>
+                  <QtyStepper value={qty} min={1} max={inStock ? stockQty : 1} onChange={setQty} lang={lang} disabled={!inStock} />
                 </div>
               </div>
 
               <button
                 type="button"
                 onClick={() => add(qty)}
-                className="h-12 w-full rounded-2xl bg-ink text-sm font-bold text-white shadow-sm transition-all duration-200 ease-out hover:bg-navy hover:shadow-md"
+                disabled={!inStock}
+                className="h-12 w-full rounded-2xl bg-ink text-sm font-bold text-white shadow-sm transition-all duration-150 ease-out transform-gpu active:scale-95 hover:bg-navy hover:shadow-md disabled:bg-slate-400"
               >
                 {t.addToCart}
               </button>
@@ -152,4 +163,4 @@ export function ProductCard({ product, slug }) {
       )}
     </>
   )
-}
+})

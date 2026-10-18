@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { supabase } from '../lib/supabaseClient';
 import { useLanguage } from '../context/LanguageContext';
 import { useCatalog } from '../lib/useCatalog';
 import { categoryCopy } from '../lib/catalog';
@@ -9,146 +8,227 @@ import { EmptyState } from '../components/EmptyState';
 import { BackButton } from '../components/BackButton';
 import { CategorySwitcher } from '../components/CategorySwitcher';
 import { ProductCard } from '../components/ProductCard';
-import { collectSeries, collectSizes, matchesSeries, matchesSize } from '../lib/productMeta';
-import { useLiveStock } from '../lib/stockSync';
+import { CatalogFilters, FilterFab, MobileFilterDrawer, PRICE_MAX, PRICE_MIN, SortSelect } from '../components/CatalogFilters';
+import { collectSeries, collectSizes, matchesSeries, matchesSize, productSeries, productSizes } from '../lib/productMeta';
+
+function productPrice(product) {
+  return Number(product?.price) || 0;
+}
+
+function productStock(product) {
+  const variants = product?.product_variants || [];
+  if (variants.length) {
+    const variantStock = variants.reduce((sum, variant) => sum + (Number(variant.stock) || 0), 0);
+    return variantStock || Number(product?.stock) || 0;
+  }
+  return Number(product?.stock) || 0;
+}
+
+function countLabel(count, lang) {
+  const formatted = new Intl.NumberFormat(lang === 'bn' ? 'bn-BD' : 'en-US').format(count);
+  return lang === 'bn' ? `দেখাচ্ছে ${formatted}টি পণ্য` : `Showing ${formatted} wholesale items`;
+}
+
+const EMPTY_FILTERS = {
+  size: 'all',
+  series: 'all',
+  priceLo: PRICE_MIN,
+  priceHi: PRICE_MAX,
+  inStock: false,
+  sort: 'featured',
+};
 
 export default function CategoryPage() {
   const { slug } = useParams();
   const { lang, t } = useLanguage();
-  const { categories, counts } = useCatalog();
+  const { categories, counts, products: catalog, loading } = useCatalog();
 
-  const [category, setCategory] = useState(null);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [size, setSize] = useState('');
-  const [series, setSeries] = useState('');
-  const [showAll, setShowAll] = useState(false);
-  useLiveStock(setProducts);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchCategoryAndProducts() {
-      setLoading(true);
-      try {
-        const { data: catData, error: catError } = await supabase
-          .from('categories')
-          .select('*')
-          .eq('slug', slug)
-          .single();
-
-        if (cancelled) return;
-
-        if (catError || !catData) {
-          setCategory(null);
-          setProducts([]);
-          return;
-        }
-        setCategory(catData);
-
-        const { data: prodData } = await supabase
-          .from('products')
-          .select('*, product_variants(*)')
-          .eq('category_id', catData.id)
-          .eq('is_active', true);
-
-        if (cancelled) return;
-        setProducts(prodData || []);
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) {
-          setCategory(null);
-          setProducts([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    fetchCategoryAndProducts();
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
+  const [size, setSize] = useState('all');
+  const [series, setSeries] = useState('all');
+  const [priceLo, setPriceLo] = useState(PRICE_MIN);
+  const [priceHi, setPriceHi] = useState(PRICE_MAX);
+  const [inStock, setInStock] = useState(false);
+  const [sort, setSort] = useState('featured');
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [draft, setDraft] = useState(null);
 
   useEffect(() => {
-    setSize('');
-    setSeries('');
-    setShowAll(false);
+    setSize('all');
+    setSeries('all');
+    setPriceLo(PRICE_MIN);
+    setPriceHi(PRICE_MAX);
+    setInStock(false);
+    setSort('featured');
+    setMobileOpen(false);
+    setDraft(null);
   }, [slug]);
+
+  const category = useMemo(
+    () => categories.find((item) => item.slug === slug) || null,
+    [categories, slug],
+  );
+
+  const products = useMemo(
+    () => (category ? catalog.filter((product) => product.category_id === category.id) : []),
+    [catalog, category],
+  );
 
   const title = category ? categoryCopy(category, lang).title : '';
-  const sizes = collectSizes(products);
-  const seriesOptions = collectSeries(products.filter((product) => matchesSize(product, size)));
-  const guided = sizes.length > 0 || seriesOptions.length > 0 || collectSeries(products).length > 0;
-  const visibleProducts = products.filter((product) => {
-    if (!guided || showAll) return true;
-    if (!size && !series) return false;
-    return matchesSize(product, size || 'all') && matchesSeries(product, series || 'all');
-  });
+  const sizes = useMemo(() => collectSizes(products), [products]);
+  const allSeries = useMemo(() => collectSeries(products), [products]);
 
-  function chooseSize(next) {
-    setShowAll(false);
+  const sizeCounts = useMemo(() => {
+    const map = {};
+    products.forEach((product) => {
+      productSizes(product).forEach((item) => {
+        map[item] = (map[item] || 0) + 1;
+      });
+    });
+    return map;
+  }, [products]);
+
+  const seriesFor = useCallback((sizeValue) => {
+    const map = {};
+    products.filter((product) => matchesSize(product, sizeValue)).forEach((product) => {
+      const label = productSeries(product);
+      if (!label) return;
+      map[label] = (map[label] || 0) + 1;
+    });
+    return {
+      map,
+      options: allSeries.filter((item) => sizeValue === 'all' || map[item]),
+    };
+  }, [allSeries, products]);
+
+  const committedSeries = useMemo(() => seriesFor(size), [seriesFor, size]);
+  const draftSeries = useMemo(() => seriesFor(draft?.size || 'all'), [draft?.size, seriesFor]);
+
+  const visibleProducts = useMemo(() => {
+    const filtered = products.filter((product) => {
+      const price = productPrice(product);
+      if (price < priceLo || price > priceHi) return false;
+      if (!matchesSize(product, size) || !matchesSeries(product, series)) return false;
+      if (inStock && productStock(product) <= 0) return false;
+      return true;
+    });
+    const list = [...filtered];
+    if (sort === 'price-asc') list.sort((a, b) => productPrice(a) - productPrice(b));
+    else if (sort === 'price-desc') list.sort((a, b) => productPrice(b) - productPrice(a));
+    else if (sort === 'name') list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    else if (sort === 'stock') list.sort((a, b) => productStock(b) - productStock(a));
+    return list;
+  }, [products, priceLo, priceHi, size, series, inStock, sort]);
+
+  const chooseSize = useCallback((next) => {
     setSize(next);
     setSeries((current) => {
       if (!current || current === 'all') return current;
       const stillThere = products.some((product) => matchesSize(product, next) && matchesSeries(product, current));
-      return stillThere ? current : '';
+      return stillThere ? current : 'all';
     });
-  }
+  }, [products]);
 
-  function chooseSeries(next) {
-    setShowAll(false);
+  const chooseSeries = useCallback((next) => {
     setSeries(next);
-  }
+  }, []);
 
-  function clearFilters() {
-    setSize('');
-    setSeries('');
-    setShowAll(true);
-  }
+  const onPrice = useCallback((lo, hi) => {
+    setPriceLo(lo);
+    setPriceHi(hi);
+  }, []);
 
-  const chip = (active) =>
-    `inline-flex h-11 shrink-0 items-center rounded-full border px-3 text-sm font-bold transition-all duration-200 ease-out ${
-      active ? 'border-ink bg-ink text-white shadow-sm' : 'border-slate-200/80 bg-white text-ink hover:shadow-md'
-    }`;
+  const clearFilters = useCallback(() => {
+    setSize(EMPTY_FILTERS.size);
+    setSeries(EMPTY_FILTERS.series);
+    setPriceLo(EMPTY_FILTERS.priceLo);
+    setPriceHi(EMPTY_FILTERS.priceHi);
+    setInStock(EMPTY_FILTERS.inStock);
+  }, []);
+
+  const activeFilterCount = [
+    size !== 'all',
+    series !== 'all',
+    priceLo !== PRICE_MIN || priceHi !== PRICE_MAX,
+    inStock,
+  ].filter(Boolean).length;
+
+  const draftCount = draft ? [
+    draft.size !== 'all',
+    draft.series !== 'all',
+    draft.priceLo !== PRICE_MIN || draft.priceHi !== PRICE_MAX,
+    draft.inStock,
+  ].filter(Boolean).length : 0;
+
+  const openMobile = useCallback(() => {
+    setDraft({ size, series, priceLo, priceHi, inStock, sort });
+    setMobileOpen(true);
+  }, [size, series, priceLo, priceHi, inStock, sort]);
+
+  const applyMobile = useCallback(() => {
+    if (draft) {
+      setSize(draft.size);
+      setSeries(draft.series);
+      setPriceLo(draft.priceLo);
+      setPriceHi(draft.priceHi);
+      setInStock(draft.inStock);
+      setSort(draft.sort);
+    }
+    setMobileOpen(false);
+  }, [draft]);
+
+  const filterProps = {
+    lang,
+    t,
+    categories,
+    activeSlug: slug,
+    categoryCounts: counts,
+    sizes,
+    series: committedSeries.options,
+    size,
+    seriesValue: series,
+    sizeCounts,
+    seriesCounts: committedSeries.map,
+    priceLo,
+    priceHi,
+    inStock,
+    onInStock: setInStock,
+    onPrice,
+    onSize: chooseSize,
+    onSeries: chooseSeries,
+    onClear: clearFilters,
+    activeCount: activeFilterCount,
+  };
+
+  const draftProps = draft ? {
+    ...filterProps,
+    series: draftSeries.options,
+    size: draft.size,
+    seriesValue: draft.series,
+    seriesCounts: draftSeries.map,
+    priceLo: draft.priceLo,
+    priceHi: draft.priceHi,
+    inStock: draft.inStock,
+    sort: draft.sort,
+    showSort: true,
+    activeCount: draftCount,
+    onPrice: (lo, hi) => setDraft((current) => (current ? { ...current, priceLo: lo, priceHi: hi } : current)),
+    onSize: (next) => setDraft((current) => {
+      if (!current) return current;
+      const stillThere = !current.series || current.series === 'all'
+        || products.some((product) => matchesSize(product, next) && matchesSeries(product, current.series));
+      return { ...current, size: next, series: stillThere ? current.series : 'all' };
+    }),
+    onSeries: (next) => setDraft((current) => (current ? { ...current, series: next } : current)),
+    onInStock: (next) => setDraft((current) => (current ? { ...current, inStock: next } : current)),
+    onSort: (next) => setDraft((current) => (current ? { ...current, sort: next } : current)),
+    onClear: () => setDraft((current) => (current ? { ...current, ...EMPTY_FILTERS, sort: current.sort } : current)),
+  } : null;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-4">
-      <CategorySwitcher categories={categories} activeSlug={slug} counts={counts}>
-        {!loading && category && guided && (
-          <div className="space-y-2 border-t border-slate-100 py-2">
-            {sizes.length > 0 && (
-              <div>
-                <p className="mb-1 text-[11px] font-bold text-brass">{t.stepSize}</p>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  <button type="button" className={chip(size === 'all')} onClick={() => chooseSize('all')}>{t.allSizes}</button>
-                  {sizes.map((item) => (
-                    <button key={item} type="button" className={chip(size === item)} onClick={() => chooseSize(item)}>
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {(size || seriesOptions.length > 0) && seriesOptions.length > 0 && (
-              <div>
-                <p className="mb-1 text-[11px] font-bold text-brass">{t.stepSeries}</p>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  <button type="button" className={chip(series === 'all')} onClick={() => chooseSeries('all')}>{t.allSeries}</button>
-                  {seriesOptions.map((item) => (
-                    <button key={item} type="button" className={chip(series === item)} onClick={() => chooseSeries(item)}>
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <button type="button" onClick={clearFilters} className="inline-flex h-11 items-center text-sm font-bold text-sapphire">
-              {t.clearFilters}
-            </button>
-          </div>
-        )}
-      </CategorySwitcher>
+    <div className="mx-auto max-w-7xl px-4 py-4 pb-16 md:pb-4">
+      <div className="md:hidden">
+        <CategorySwitcher categories={categories} activeSlug={slug} counts={counts} />
+      </div>
       <BackButton fallback="/" />
 
       {loading ? (
@@ -168,25 +248,44 @@ export default function CategoryPage() {
           />
         </div>
       ) : (
-        <>
-          <div className="mb-4 mt-4">
-            <p className="text-[11px] font-bold text-brass">{t.wholesaleRate}</p>
-            <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">{title}</h1>
-          </div>
-
-          {products.length === 0 ? (
-            <EmptyState icon="📦" title={t.noProducts} />
-          ) : visibleProducts.length === 0 ? (
-            <EmptyState icon="🔎" title={guided && !showAll && !size && !series ? t.chooseFilter : t.noFilterMatch} />
-          ) : (
-            <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4 xl:grid-cols-5">
-              {visibleProducts.map((prod) => (
-                <ProductCard key={prod.id} product={prod} slug={slug} />
-              ))}
+        <div className="mt-4 flex flex-col gap-5 md:flex-row md:items-start">
+          <aside className="hidden w-72 flex-shrink-0 md:block">
+            <div className="sticky top-20 self-start max-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <CatalogFilters {...filterProps} />
             </div>
-          )}
-        </>
+          </aside>
+
+          <div className="min-w-0 flex-1">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold text-brass">{t.wholesaleRate}</p>
+                <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">{title}</h1>
+                <p className="mt-1 text-sm font-bold text-slate-600">{countLabel(visibleProducts.length, lang)}</p>
+              </div>
+              <div className="hidden w-56 md:block">
+                <SortSelect lang={lang} value={sort} onChange={setSort} />
+              </div>
+            </div>
+
+            {products.length === 0 ? (
+              <EmptyState icon="📦" title={t.noProducts} />
+            ) : visibleProducts.length === 0 ? (
+              <EmptyState icon="🔎" title={t.noFilterMatch} />
+            ) : (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {visibleProducts.map((prod) => (
+                  <ProductCard key={prod.id} product={prod} slug={slug} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
+
+      {!loading && category && <FilterFab lang={lang} count={activeFilterCount} onClick={openMobile} />}
+      <MobileFilterDrawer open={mobileOpen} onClose={() => setMobileOpen(false)} onApply={applyMobile} lang={lang} t={t}>
+        {draftProps && <CatalogFilters {...draftProps} />}
+      </MobileFilterDrawer>
     </div>
   );
 }
