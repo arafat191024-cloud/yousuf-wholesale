@@ -15,7 +15,7 @@ export function AdminStockAlert({ lang = 'bn' }) {
     let cancelled = false
     supabase.from('products').select('id, stock').then(({ data }) => {
       if (!cancelled && data) setProducts(data)
-    })
+    }).catch(() => {})
     return () => {
       cancelled = true
     }

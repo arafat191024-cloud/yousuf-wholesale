@@ -331,7 +331,7 @@ export default function AdminProducts() {
       .eq('id', productId);
 
     if (!error) {
-      setProducts(products.map((p) => (p.id === productId ? { ...p, stock: newStock } : p)));
+      setProducts((rows) => rows.map((p) => (p.id === productId ? { ...p, stock: newStock } : p)));
     } else {
       toast.error(t.stockError + ': ' + error.message);
     }
@@ -344,7 +344,7 @@ export default function AdminProducts() {
       .eq('id', productId);
 
     if (!error) {
-      setProducts(products.map((p) => (p.id === productId ? { ...p, is_active: !currentStatus } : p)));
+      setProducts((rows) => rows.map((p) => (p.id === productId ? { ...p, is_active: !currentStatus } : p)));
       toast.success(lang === 'bn' ? 'দৃশ্যমানতা হালনাগাদ হয়েছে' : 'Visibility updated');
     } else {
       toast.error(error.message);

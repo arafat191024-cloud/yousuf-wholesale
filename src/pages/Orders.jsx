@@ -61,6 +61,15 @@ function OrderCard({ order, lang, t }) {
   )
 }
 
+function readRecentOrders() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('recent_orders') || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
 export function Orders() {
   const { user, loading: authLoading } = useAuth()
   const { lang, t } = useLanguage()
@@ -73,7 +82,7 @@ export function Orders() {
   async function loadOrders(nextPhone = phone) {
     setLoading(true)
     setNotice('')
-    const localRecent = JSON.parse(localStorage.getItem('recent_orders') || '[]')
+    const localRecent = readRecentOrders()
 
     if (user?.id) {
       const { data, error } = await supabase
@@ -122,7 +131,7 @@ export function Orders() {
     if (authLoading) return
     if (user) loadOrders()
     else {
-      const recent = JSON.parse(localStorage.getItem('recent_orders') || '[]')
+      const recent = readRecentOrders()
       setOrders(recent)
       setSearched(recent.length > 0)
     }

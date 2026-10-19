@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
 import { BackButton } from '../../components/BackButton';
 import { LanguageToggle } from '../../components/LanguageToggle';
-import { orderStatusLabel } from '../../lib/format';
+import { lineAmount, orderStatusLabel } from '../../lib/format';
 import { PaymentBreakdown } from '../../components/PaymentBreakdown';
 import { inPaymentRange, summarizePayments } from '../../lib/paymentMetrics';
 import {
@@ -29,6 +29,14 @@ import { AdminStockAlert } from '../../components/AdminStockAlert';
 
 function showPaymentDetail(method, value) {
   return needsTransactionId(method) || Boolean(String(value || '').trim());
+}
+
+function stockLeft(item, liveMap) {
+  const product = liveMap?.[item?.productId];
+  if (!product) return null;
+  const raw = item?.variantId ? product.variants?.[item.variantId] : product.totalStock;
+  const stock = Number(raw);
+  return Number.isFinite(stock) ? stock : null;
 }
 
 export default function AdminOrders() {
@@ -180,7 +188,8 @@ export default function AdminOrders() {
         stockMap[p.id] = {
           totalStock: Number(p.stock) || 0,
           variants: (p.product_variants || []).reduce((acc, v) => {
-            acc[v.id] = Number(v.stock) || 50;
+            const stock = Number(v.stock);
+            acc[v.id] = Number.isFinite(stock) ? stock : 0;
             return acc;
           }, {})
         };
@@ -217,16 +226,16 @@ export default function AdminOrders() {
 
   const updateOrderField = async (orderId, fields) => {
     const targetOrder = orders.find(o => o.id === orderId);
-    if (!targetOrder) return;
+    if (!targetOrder) return false;
 
     if (targetOrder.status === 'delivered' && fields.status !== undefined && fields.status !== 'delivered') {
       const confirmRevert = window.confirm(t.deliveredWarn);
-      if (!confirmRevert) return;
+      if (!confirmRevert) return false;
     }
 
     if (fields.status === 'cancelled' || fields.status === 'failed') {
       const confirmCancel = window.confirm(`${t.cancelWarn} #${targetOrder.order_number || ''}`);
-      if (!confirmCancel) return;
+      if (!confirmCancel) return false;
     }
 
     const nextOrder = { ...targetOrder, ...fields };
@@ -238,10 +247,10 @@ export default function AdminOrders() {
     if (error) {
       toast.error(isInsufficientStock(error) ? stockWarning(lang, lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product', 0) : t.updateFailed);
       console.error(error);
-      return;
+      return false;
     }
 
-    setOrders(orders.map((o) => (o.id === orderId ? nextOrder : o)));
+    setOrders((current) => current.map((o) => (o.id === orderId ? nextOrder : o)));
 
     try {
       await syncStockForOrder(targetOrder, nextOrder);
@@ -251,7 +260,7 @@ export default function AdminOrders() {
         items: targetOrder.items,
         total_amount: targetOrder.total_amount,
       }).eq('id', orderId);
-      setOrders(orders);
+      setOrders((current) => current.map((o) => (o.id === orderId ? targetOrder : o)));
       try {
         await syncStockForOrder(nextOrder, targetOrder);
       } catch (revertError) {
@@ -259,12 +268,13 @@ export default function AdminOrders() {
       }
       toast.error(isInsufficientStock(stockError) ? stockWarning(lang, stockError.productName || (lang === 'bn' ? 'নির্বাচিত পণ্য' : 'Selected product'), stockError.available || 0) : t.stockFailed);
       console.error(stockError);
-      return;
+      return false;
     }
 
     if (fields.status === 'cancelled' || fields.status === 'failed' || fields.payment_status === 'failed') toast.success(t.restocked);
     else if (fields.payment_status) toast.success(t.payUpdated);
     else if (fields.status || fields.items) toast.success(t.statusUpdated);
+    return true;
   };
 
   const deleteOrder = async (order) => {
@@ -288,28 +298,6 @@ export default function AdminOrders() {
       console.error(stockError);
     }
   };
-
-  // Dynamic live stock calculate
-  const calculatedStock = useMemo(() => {
-    const liveMap = JSON.parse(JSON.stringify(productsStock));
-
-    orders.forEach((order) => {
-      if (order.status !== 'cancelled' && Array.isArray(order.items)) {
-        order.items.forEach((item) => {
-          if (item.stockApplied || item.stockTracked) return
-          if (item.productId && liveMap[item.productId]) {
-            if (item.variantId && liveMap[item.productId].variants?.[item.variantId] !== undefined) {
-              liveMap[item.productId].variants[item.variantId] -= Number(item.quantity) || 0;
-            } else {
-              liveMap[item.productId].totalStock -= Number(item.quantity) || 0;
-            }
-          }
-        });
-      }
-    });
-
-    return liveMap;
-  }, [productsStock, orders]);
 
   const paymentStats = useMemo(
     () => summarizePayments(orders, paymentRange),
@@ -343,6 +331,10 @@ export default function AdminOrders() {
 
   const handlePrintMemo = (order) => {
     const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error(lang === 'bn' ? 'প্রিন্ট উইন্ডো খোলা যায়নি।' : 'The print window could not be opened.');
+      return;
+    }
     const items = Array.isArray(order.items) ? order.items : [];
     const paidLabel = isPaymentVerified(order.payment_status) ? 'VERIFIED' : (isPaymentFailed(order.payment_status) ? 'FAILED' : 'PENDING');
     const paymentLines = [
@@ -409,7 +401,7 @@ export default function AdminOrders() {
                   <td>${it.title}</td>
                   <td class="text-right">৳${it.unitPrice}</td>
                   <td style="text-align:center">${it.quantity} পিস</td>
-                  <td class="text-right">৳${it.unitPrice * it.quantity}</td>
+                  <td class="text-right">৳${lineAmount(it.unitPrice, it.quantity)}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -436,7 +428,7 @@ export default function AdminOrders() {
 
   const handleSaveEdit = async () => {
     if (!editingOrder) return;
-    const recalculatedTotal = editingOrder.items.reduce((acc, it) => acc + (it.unitPrice * it.quantity), 0);
+    const recalculatedTotal = (editingOrder.items || []).reduce((acc, it) => acc + lineAmount(it.unitPrice, it.quantity), 0);
     const updated = {
       customer_name: editingOrder.customer_name,
       shop_name: editingOrder.shop_name,
@@ -451,8 +443,8 @@ export default function AdminOrders() {
       items: editingOrder.items,
       total_amount: recalculatedTotal
     };
-    await updateOrderField(editingOrder.id, updated);
-    setEditingOrder(null);
+    const saved = await updateOrderField(editingOrder.id, updated);
+    if (saved) setEditingOrder(null);
   };
 
   const actionBtn = 'inline-flex min-h-11 items-center rounded-xl border border-stone-200 bg-white px-3 text-xs font-bold transition-all duration-200 hover:bg-sand';
@@ -470,7 +462,6 @@ export default function AdminOrders() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link to="/admin/memo" className={actionBtn}>{lang === 'bn' ? 'নতুন মেমো' : 'New memo'}</Link>
             <Link to="/admin/products" className={actionBtn}>{t.products}</Link>
             <Link to="/admin/pos" className={actionBtn}>{t.memo}</Link>
             <LanguageToggle />
@@ -646,19 +637,16 @@ export default function AdminOrders() {
 
                   <div className="block divide-y divide-stone-100 border-t border-stone-100 md:hidden">
                     {items.map((item, idx) => {
-                      const prodInfo = calculatedStock[item.productId];
-                      const remainingStock = item.variantId
-                        ? (prodInfo?.variants?.[item.variantId] ?? 25)
-                        : (prodInfo?.totalStock ?? 60);
-                      const isShortStock = remainingStock <= 0;
+                      const remainingStock = stockLeft(item, productsStock);
+                      const isShortStock = remainingStock != null && remainingStock <= 0;
                       return (
                         <div key={idx} className="space-y-1 px-4 py-3 text-sm">
                           <p className="font-bold text-ink">{item.title}</p>
                           <p className="text-stone-600">৳{item.unitPrice} × {item.quantity} {lang === 'bn' ? 'পিস' : 'pcs'}</p>
-                          <p className={isShortStock ? 'text-xs font-bold text-red-700' : 'text-xs font-semibold text-emerald-700'}>
-                            {isShortStock ? `${t.stockOut} (${remainingStock})` : `✓ ${t.inStock} (${remainingStock})`}
+                          <p className={remainingStock == null ? 'text-xs font-semibold text-slate-500' : isShortStock ? 'text-xs font-bold text-red-700' : 'text-xs font-semibold text-emerald-700'}>
+                            {remainingStock == null ? '—' : isShortStock ? `${t.stockOut} (${remainingStock})` : `✓ ${t.inStock} (${remainingStock})`}
                           </p>
-                          <p className="font-extrabold">৳{(item.unitPrice * item.quantity).toLocaleString()}</p>
+                          <p className="font-extrabold">৳{lineAmount(item.unitPrice, item.quantity).toLocaleString()}</p>
                         </div>
                       );
                     })}
@@ -677,20 +665,17 @@ export default function AdminOrders() {
                       </thead>
                       <tbody>
                         {items.map((item, idx) => {
-                          const prodInfo = calculatedStock[item.productId];
-                          const remainingStock = item.variantId
-                            ? (prodInfo?.variants?.[item.variantId] ?? 25)
-                            : (prodInfo?.totalStock ?? 60);
-                          const isShortStock = remainingStock <= 0;
+                          const remainingStock = stockLeft(item, productsStock);
+                          const isShortStock = remainingStock != null && remainingStock <= 0;
                           return (
                             <tr key={idx} className="border-t border-stone-100">
                               <td className="px-5 py-3 font-semibold text-ink">{item.title}</td>
                               <td className="px-3 py-3 text-right">৳{item.unitPrice}</td>
                               <td className="px-3 py-3 text-center font-bold">{item.quantity}</td>
-                              <td className={`px-3 py-3 text-center text-xs font-bold ${isShortStock ? 'bg-red-50 text-red-700' : 'text-emerald-700'}`}>
-                                {isShortStock ? `${t.stockOut} (${remainingStock})` : `✓ ${t.inStock} (${remainingStock})`}
+                              <td className={`px-3 py-3 text-center text-xs font-bold ${remainingStock == null ? 'text-slate-500' : isShortStock ? 'bg-red-50 text-red-700' : 'text-emerald-700'}`}>
+                                {remainingStock == null ? '—' : isShortStock ? `${t.stockOut} (${remainingStock})` : `✓ ${t.inStock} (${remainingStock})`}
                               </td>
-                              <td className="px-5 py-3 text-right font-bold">৳{(item.unitPrice * item.quantity).toLocaleString()}</td>
+                              <td className="px-5 py-3 text-right font-bold">৳{lineAmount(item.unitPrice, item.quantity).toLocaleString()}</td>
                             </tr>
                           );
                         })}

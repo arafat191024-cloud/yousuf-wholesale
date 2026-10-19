@@ -171,21 +171,26 @@ export function Checkout() {
       }
 
       const orderNumber = data?.order_number || generatedOrderNumber
-      localStorage.setItem('last_order_phone', customerPhone.trim())
-      const recent = JSON.parse(localStorage.getItem('recent_orders') || '[]')
-      recent.unshift({
-        order_number: orderNumber,
-        phone: customerPhone.trim(),
-        total_amount: totalAmount,
-        payment_method: paymentMethod,
-        transaction_id: showPrepaid ? transactionId.trim() : null,
-        sender_number: showPrepaid ? senderNumber.trim() : null,
-        payment_status: 'pending',
-        status: 'pending',
-        created_at: new Date().toISOString(),
-        items: cartItems,
-      })
-      localStorage.setItem('recent_orders', JSON.stringify(recent.slice(0, 8)))
+      try {
+        localStorage.setItem('last_order_phone', customerPhone.trim())
+        const stored = JSON.parse(localStorage.getItem('recent_orders') || '[]')
+        const recent = Array.isArray(stored) ? stored : []
+        recent.unshift({
+          order_number: orderNumber,
+          phone: customerPhone.trim(),
+          total_amount: totalAmount,
+          payment_method: paymentMethod,
+          transaction_id: showPrepaid ? transactionId.trim() : null,
+          sender_number: showPrepaid ? senderNumber.trim() : null,
+          payment_status: 'pending',
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          items: cartItems,
+        })
+        localStorage.setItem('recent_orders', JSON.stringify(recent.slice(0, 8)))
+      } catch {
+        /* A bad local cache must not hide an order that already saved. */
+      }
       setOrderSuccess(orderNumber)
       toast.success(t.orderSuccess)
       clearCart()

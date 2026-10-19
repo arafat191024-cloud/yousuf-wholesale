@@ -3,18 +3,28 @@ import { STOCK_EVENT } from '../lib/stockSync';
 
 const CartContext = createContext();
 
+function readStoredCart() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('wholesale_cart') || '[]');
+    return Array.isArray(parsed) ? parsed.filter((item) => item && item.key) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function CartProvider({ children }) {
-  const [cartItems, setCartItems] = useState(() => {
-    const saved = localStorage.getItem('wholesale_cart');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [cartItems, setCartItems] = useState(readStoredCart);
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [addedOpen, setAddedOpen] = useState(false);
   const [addedItem, setAddedItem] = useState(null);
 
   useEffect(() => {
-    localStorage.setItem('wholesale_cart', JSON.stringify(cartItems));
+    try {
+      localStorage.setItem('wholesale_cart', JSON.stringify(cartItems));
+    } catch {
+      /* A full or blocked store must not take down the shop. */
+    }
   }, [cartItems]);
 
   useEffect(() => {
@@ -22,7 +32,14 @@ export function CartProvider({ children }) {
       const absolute = event.detail?.absolute;
       if (!absolute) return;
       setCartItems((items) =>
-        items.map((item) => (absolute[item.productId] === undefined ? item : { ...item, stock: absolute[item.productId] })),
+        items.flatMap((item) => {
+          if (absolute[item.productId] === undefined) return [item];
+          const stock = Number(absolute[item.productId]);
+          const nextStock = Number.isFinite(stock) ? Math.max(0, stock) : 0;
+          const quantity = Math.min(Number(item.quantity) || 0, nextStock);
+          if (quantity <= 0) return [];
+          return [{ ...item, stock: nextStock, quantity }];
+        }),
       );
     };
     window.addEventListener(STOCK_EVENT, onStock);
@@ -30,9 +47,11 @@ export function CartProvider({ children }) {
   }, []);
 
   const addToCart = useCallback((product, variant, quantity) => {
-    const stock = Number(variant ? variant.stock : product.stock) || 0;
+    const rawStock = Number(variant ? variant.stock : product?.stock);
+    const stock = Number.isFinite(rawStock) ? rawStock : 0;
+    if (!product?.id || stock <= 0) return;
     let safeQty = Math.max(1, Number(quantity) || 1);
-    if (stock > 0) safeQty = Math.min(safeQty, stock);
+    safeQty = Math.min(safeQty, stock);
     const itemKey = variant ? `${product.id}-${variant.id}` : `${product.id}-default`;
     const unitPrice = Number(variant ? variant.price : product.price) || 0;
     const title = variant ? `${product.name} (${variant.size})` : product.name;
@@ -43,12 +62,12 @@ export function CartProvider({ children }) {
     setCartItems((prev) => {
       const existing = prev.find((item) => item.key === itemKey);
       if (existing) {
-        const nextQty = existing.quantity + safeQty;
+        const nextQty = (Number(existing.quantity) || 0) + safeQty;
         return prev.map((item) =>
           item.key === itemKey
             ? {
                 ...item,
-                quantity: stock > 0 ? Math.min(nextQty, stock) : nextQty,
+                quantity: Math.min(nextQty, stock),
                 image: item.image || image,
                 lotSize,
                 size: item.size || size,
@@ -94,16 +113,18 @@ export function CartProvider({ children }) {
   }, []);
 
   const updateQuantity = useCallback((itemKey, quantity) => {
-    if (quantity <= 0) {
+    const requested = Number(quantity);
+    if (!Number.isFinite(requested) || requested <= 0) {
       removeFromCart(itemKey);
       return;
     }
     setCartItems((prev) =>
-      prev.map((item) => {
-        if (item.key !== itemKey) return item;
+      prev.flatMap((item) => {
+        if (item.key !== itemKey) return [item];
         const cap = Number(item.stock);
-        const next = Number.isFinite(cap) && cap > 0 ? Math.min(quantity, cap) : quantity;
-        return { ...item, quantity: next };
+        const next = Number.isFinite(cap) ? Math.min(requested, Math.max(0, cap)) : requested;
+        if (next <= 0) return [];
+        return [{ ...item, quantity: next }];
       })
     );
   }, [removeFromCart]);
@@ -111,11 +132,19 @@ export function CartProvider({ children }) {
   const clearCart = useCallback(() => setCartItems([]), []);
 
   const totalAmount = useMemo(
-    () => cartItems.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0),
+    () => cartItems.reduce((acc, item) => {
+      const price = Number(item?.unitPrice);
+      const qty = Number(item?.quantity);
+      if (!Number.isFinite(price) || !Number.isFinite(qty)) return acc;
+      return acc + price * qty;
+    }, 0),
     [cartItems],
   );
   const totalCount = useMemo(
-    () => cartItems.reduce((acc, item) => acc + item.quantity, 0),
+    () => cartItems.reduce((acc, item) => {
+      const qty = Number(item?.quantity);
+      return acc + (Number.isFinite(qty) ? qty : 0);
+    }, 0),
     [cartItems],
   );
 

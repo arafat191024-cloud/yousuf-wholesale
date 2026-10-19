@@ -4,7 +4,7 @@ const MAX_EDGE = 800
 const TARGET_BYTES = 300 * 1024
 const MAX_BYTES = 500 * 1024
 const START_QUALITY = 0.82
-const BUCKET = 'products'
+const BUCKETS = ['products', 'product-images']
 
 function fail(code) {
   const error = new Error(code)
@@ -214,16 +214,21 @@ export async function uploadProductImage(file, onProgress) {
   const webp = await compressProductImage(file, onProgress)
   const path = `products/${Date.now()}-${cleanFileName(file.name)}.webp`
   report(94)
-  const { error } = await supabase.storage.from(BUCKET).upload(path, webp, {
-    cacheControl: '31536000',
-    upsert: false,
-    contentType: 'image/webp',
-  })
-  if (error) {
+  let uploadedBucket = ''
+  for (const bucket of BUCKETS) {
+    const { error } = await supabase.storage.from(bucket).upload(path, webp, {
+      cacheControl: '31536000',
+      upsert: false,
+      contentType: 'image/webp',
+    })
+    if (!error) {
+      uploadedBucket = bucket
+      break
+    }
     console.error(error)
-    throw fail('STORAGE')
   }
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
+  if (!uploadedBucket) throw fail('STORAGE')
+  const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(path)
   const url = data?.publicUrl || ''
   if (!url.startsWith('http') || isInlineImageUrl(url)) throw fail('STORAGE')
   report(100)

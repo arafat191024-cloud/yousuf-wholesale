@@ -1,5 +1,17 @@
+export function finiteNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+export function lineAmount(price, quantity) {
+  const unit = Number(price)
+  const qty = Number(quantity)
+  if (!Number.isFinite(unit) || !Number.isFinite(qty)) return 0
+  return unit * qty
+}
+
 export function formatTaka(amount, lang = 'bn') {
-  const value = Number(amount || 0)
+  const value = finiteNumber(amount, 0)
   const formatted = new Intl.NumberFormat(lang === 'bn' ? 'bn-BD' : 'en-US', {
     maximumFractionDigits: 2,
   }).format(value)

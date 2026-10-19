@@ -80,7 +80,7 @@ export function applyStockEvent(products, detail) {
   return products.map((product) => {
     const change = delta[product.id]
     if (!change) return product
-    return { ...product, stock: (Number(product.stock) || 0) - change }
+    return { ...product, stock: Math.max(0, (Number(product.stock) || 0) - change) }
   })
 }
 
@@ -96,8 +96,9 @@ function ensureStockChannel() {
       { event: '*', schema: 'public', table: 'products' },
       (payload) => {
         const row = payload.new
-        if (!row?.id) return
-        publishAbsoluteStock({ [row.id]: Number(row.stock) || 0 })
+        const stock = Number(row?.stock)
+        if (!row?.id || !Number.isFinite(stock)) return
+        publishAbsoluteStock({ [row.id]: Math.max(0, stock) })
       },
     )
     .subscribe()

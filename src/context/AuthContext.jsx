@@ -22,10 +22,13 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      loadProfile(session?.user?.id).finally(() => setLoading(false))
-    })
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setSession(session)
+        return loadProfile(session?.user?.id)
+      })
+      .catch(() => setSession(null))
+      .finally(() => setLoading(false))
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
