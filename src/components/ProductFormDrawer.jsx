@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { categoryCopy } from '../lib/catalog'
 import { SERIES_OPTIONS, formatSizeLabel, productSeries, productSizes } from '../lib/productMeta'
-import { imageFileFromList, uploadProductImage } from '../lib/productImage'
+import { imageFileFromList, isInlineImageUrl, uploadProductImage } from '../lib/productImage'
 import { useScrollLock } from '../lib/useScrollLock'
 
 const copy = {
@@ -14,10 +14,13 @@ const copy = {
     upload: 'ফাইল আপলোড',
     uploading: 'আপলোড হচ্ছে...',
     uploadFailed: 'ছবি আপলোড হয়নি। আবার চেষ্টা করুন।',
-    uploadSaved: 'ছবি যোগ হয়েছে',
-    uploadFallback: 'স্টোরেজ পাওয়া যায়নি। ছবি সরাসরি সংরক্ষণ করা হয়েছে।',
-    uploadLarge: 'ছবি বড়। ছোট ছবি দিন অথবা লিংক ব্যবহার করুন।',
+    uploadSaved: 'ছবি সফলভাবে আপলোড হয়েছে',
+    uploadLarge: 'কমপ্রেসের পরেও ছবি ৫০০ KB-এর বেশি।',
+    uploadHeic: 'এই HEIC ছবি পড়া যায়নি। JPEG বা PNG দিন।',
+    uploadDecode: 'এই ছবিটি পড়া যায়নি। JPEG, PNG বা HEIC দিন।',
+    uploadData: 'বড় ছবি ডাটাবেজে রাখা হয় না। WebP আপলোড করুন।',
     dropHint: 'টেনে আনুন, পেস্ট করুন (Ctrl+V), অথবা ফাইল বেছে নিন',
+    sizeHint: 'স্ট্যান্ডার্ড সাইজ: 800x800px (অটো-কমপ্রেসড WebP < 300 KB)',
     name: 'পণ্যের নাম',
     category: 'ক্যাটাগরি',
     series: 'সিরিজ',
@@ -41,11 +44,14 @@ const copy = {
     imageUrl: 'Image URL',
     upload: 'Upload file',
     uploading: 'Uploading...',
-    uploadFailed: 'Image upload failed. Try again or paste a URL.',
-    uploadSaved: 'Image added',
-    uploadFallback: 'Storage is unavailable. The image was saved directly.',
-    uploadLarge: 'That image is too large. Use a smaller file or paste a URL.',
+    uploadFailed: 'Image upload failed. Try again.',
+    uploadSaved: 'Image uploaded successfully',
+    uploadLarge: 'The image is still over 500 KB after compression.',
+    uploadHeic: 'This HEIC file could not be read. Use JPEG or PNG.',
+    uploadDecode: 'This image could not be read. Use JPEG, PNG, or HEIC.',
+    uploadData: 'Large images are not stored in the database. Upload a WebP.',
     dropHint: 'Drag, paste (Ctrl+V), or choose a file',
+    sizeHint: 'Standard size: 800x800px (auto-compressed WebP < 300 KB)',
     name: 'Product name',
     category: 'Category',
     series: 'Series',
@@ -92,7 +98,7 @@ function formFromProduct(product) {
     size: productSizes(product)[0] || '',
     price: String(product.price ?? ''),
     stock: String(product.stock ?? 0),
-    imageUrl: product.image_url || '',
+    imageUrl: isInlineImageUrl(product.image_url) ? '' : (product.image_url || ''),
     productCode: product.product_code || '',
     description: product.description || '',
     isActive: product.is_active !== false,
@@ -104,41 +110,57 @@ export function ProductFormDrawer({ lang, product, categories, submitting, onClo
   const editing = Boolean(product?.id)
   const [form, setForm] = useState(() => (editing ? formFromProduct(product) : blankForm(categories)))
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [uploadNote, setUploadNote] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef(null)
+  const uploadLock = useRef(false)
+  const uploadFileRef = useRef(null)
   useScrollLock(true)
 
   useEffect(() => {
     setForm(product?.id ? formFromProduct(product) : blankForm(categories))
     setUploadNote('')
+    setProgress(0)
   }, [product, categories])
 
   function setField(key, value) {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
+  function uploadMessage(code) {
+    if (code === 'TOO_LARGE') return t.uploadLarge
+    if (code === 'HEIC') return t.uploadHeic
+    if (code === 'DECODE' || code === 'NOT_IMAGE' || code === 'WEBP') return t.uploadDecode
+    return t.uploadFailed
+  }
+
   async function uploadFile(file) {
-    if (!file || uploading) return
+    if (!file || uploadLock.current) return
+    uploadLock.current = true
     setUploading(true)
+    setProgress(4)
     setUploadNote('')
     try {
-      const result = await uploadProductImage(file)
-      setField('imageUrl', result.url)
-      if (result.fallback) {
-        setUploadNote(t.uploadFallback)
-        toast(t.uploadFallback)
-      } else {
-        toast.success(t.uploadSaved)
+      const result = await uploadProductImage(file, setProgress)
+      if (!result.url?.startsWith('http') || isInlineImageUrl(result.url)) {
+        throw Object.assign(new Error('STORAGE'), { code: 'STORAGE' })
       }
+      setField('imageUrl', result.url)
+      setProgress(100)
+      toast.success(t.uploadSaved)
     } catch (error) {
-      const message = error?.code === 'TOO_LARGE' ? t.uploadLarge : t.uploadFailed
+      const message = uploadMessage(error?.code)
       setUploadNote(message)
       toast.error(message)
+      setProgress(0)
     } finally {
+      uploadLock.current = false
       setUploading(false)
     }
   }
+
+  uploadFileRef.current = uploadFile
 
   function onFile(event) {
     const file = imageFileFromList(event.target.files)
@@ -151,11 +173,11 @@ export function ProductFormDrawer({ lang, product, categories, submitting, onClo
       const file = imageFileFromList(event.clipboardData?.files)
       if (!file) return
       event.preventDefault()
-      uploadFile(file)
+      uploadFileRef.current?.(file)
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  })
+  }, [])
 
   function submit(event) {
     event.preventDefault()
@@ -202,29 +224,52 @@ export function ProductFormDrawer({ lang, product, categories, submitting, onClo
                     const file = imageFileFromList(event.dataTransfer?.files)
                     if (file) uploadFile(file)
                   }}
+                  aria-describedby="product-image-spec"
+                  aria-busy={uploading}
                   className={`relative aspect-square h-28 w-28 shrink-0 overflow-hidden rounded-2xl border-2 border-dashed bg-slate-50 transition-all duration-150 ${dragOver ? 'border-ink bg-amber-50' : 'border-slate-300'}`}
                 >
-                  {form.imageUrl ? (
+                  {form.imageUrl && !isInlineImageUrl(form.imageUrl) ? (
                     <img src={form.imageUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   ) : (
                     <span className="flex h-full items-center justify-center px-2 text-center text-[11px] font-bold text-slate-400">＋</span>
+                  )}
+                  {uploading && (
+                    <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-ink/60 text-white">
+                      <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                      <span className="text-xs font-extrabold">{progress}%</span>
+                    </span>
                   )}
                 </button>
                 <div className="min-w-0 flex-1">
                   <input
                     className={fieldClass}
-                    value={form.imageUrl.startsWith('data:') ? '' : form.imageUrl}
-                    onChange={(e) => setField('imageUrl', e.target.value)}
+                    value={isInlineImageUrl(form.imageUrl) ? '' : form.imageUrl}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      if (isInlineImageUrl(next)) {
+                        setField('imageUrl', '')
+                        setUploadNote(t.uploadData)
+                        return
+                      }
+                      setField('imageUrl', next)
+                    }}
                     placeholder="https://"
                     aria-label={t.imageUrl}
+                    disabled={uploading}
                   />
                   <label className="mt-2 inline-flex h-11 cursor-pointer items-center rounded-xl border border-slate-200 px-3 text-xs font-bold text-ink transition-all duration-150 transform-gpu active:scale-95 hover:bg-slate-50">
-                    {uploading ? t.uploading : t.upload}
-                    <input ref={fileRef} type="file" accept="image/*" className="sr-only" onChange={onFile} disabled={uploading} />
+                    {uploading ? `${t.uploading} ${progress}%` : t.upload}
+                    <input ref={fileRef} type="file" accept="image/*,.heic,.heif" className="sr-only" onChange={onFile} disabled={uploading} />
                   </label>
+                  {uploading && (
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+                      <div className="h-full bg-ink transition-all duration-200" style={{ width: `${progress}%` }} />
+                    </div>
+                  )}
                   <p className="mt-2 text-[11px] font-semibold leading-snug text-slate-500">{t.dropHint}</p>
                 </div>
               </div>
+              <p id="product-image-spec" className="mt-2 text-xs font-semibold leading-snug text-slate-600">{t.sizeHint}</p>
               {uploadNote && <p className="mt-2 text-xs font-semibold text-amber-700">{uploadNote}</p>}
             </div>
 

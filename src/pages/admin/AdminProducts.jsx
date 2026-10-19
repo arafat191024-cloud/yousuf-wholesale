@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabaseClient';
@@ -10,7 +10,7 @@ import { ProductFormDrawer } from '../../components/ProductFormDrawer';
 import { AdminStockAlert } from '../../components/AdminStockAlert';
 import { insertProductRow, updateProductRow } from '../../lib/orderInsert';
 import { productSearchText, productSeries, productSizes } from '../../lib/productMeta';
-import { imageFileFromList, uploadProductImage } from '../../lib/productImage';
+import { imageFileFromList, isInlineImageUrl, uploadProductImage } from '../../lib/productImage';
 import { useLiveStock } from '../../lib/stockSync';
 
 const copy = {
@@ -60,10 +60,12 @@ const copy = {
     outTab: 'Out of Stock (0 pcs) (স্টক শেষ)',
     low: 'কম স্টক',
     changePhoto: 'ছবি পরিবর্তন',
-    imageSaved: 'ছবি হালনাগাদ হয়েছে',
-    imageFallback: 'স্টোরেজ পাওয়া যায়নি। ছবি সরাসরি সংরক্ষণ করা হয়েছে।',
+    imageSaved: 'ছবি সফলভাবে আপলোড হয়েছে',
     imageFailed: 'ছবি আপলোড হয়নি। আবার চেষ্টা করুন।',
-    imageLarge: 'ছবি বড়। ছোট ছবি দিন।',
+    imageLarge: 'কমপ্রেসের পরেও ছবি ৫০০ KB-এর বেশি।',
+    imageHeic: 'এই HEIC ছবি পড়া যায়নি। JPEG বা PNG দিন।',
+    imageDecode: 'এই ছবিটি পড়া যায়নি। JPEG, PNG বা HEIC দিন।',
+    imageData: 'বড় ছবি ডাটাবেজে রাখা হয় না। WebP আপলোড করুন।',
   },
   en: {
     title: 'Products & stock',
@@ -111,10 +113,12 @@ const copy = {
     outTab: 'Out of Stock (0 pcs) (স্টক শেষ)',
     low: 'Low stock',
     changePhoto: 'Change photo',
-    imageSaved: 'Photo updated',
-    imageFallback: 'Storage is unavailable. The image was saved directly.',
+    imageSaved: 'Image uploaded successfully',
     imageFailed: 'Image upload failed. Try again.',
-    imageLarge: 'That image is too large. Use a smaller file.',
+    imageLarge: 'The image is still over 500 KB after compression.',
+    imageHeic: 'This HEIC file could not be read. Use JPEG or PNG.',
+    imageDecode: 'This image could not be read. Use JPEG, PNG, or HEIC.',
+    imageData: 'Large images are not stored in the database. Upload a WebP.',
   },
 };
 
@@ -207,7 +211,7 @@ function stockBand(product) {
   return 'in';
 }
 
-function ThumbEditor({ product, label, busy, onPick }) {
+function ThumbEditor({ product, label, busy, percent, onPick }) {
   return (
     <label className="group relative h-14 w-14 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
       <img
@@ -217,12 +221,17 @@ function ThumbEditor({ product, label, busy, onPick }) {
         decoding="async"
         className="h-full w-full object-cover"
       />
-      <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-ink/80 px-1 py-1 text-center text-[9px] font-extrabold leading-tight text-white opacity-100 md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-        {busy ? '…' : label}
+      <span className={`pointer-events-none absolute inset-0 flex items-end justify-center bg-ink/75 px-1 py-1 text-center text-[9px] font-extrabold leading-tight text-white ${busy ? 'opacity-100' : 'opacity-100 md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100'}`}>
+        {busy ? (
+          <span className="flex w-full flex-col items-center gap-0.5 pb-0.5">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            {percent}%
+          </span>
+        ) : label}
       </span>
       <input
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         disabled={busy}
         className="sr-only"
         onChange={(event) => {
@@ -270,7 +279,8 @@ export default function AdminProducts() {
   const [query, setQuery] = useState('');
   const [drawer, setDrawer] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [photoBusyId, setPhotoBusyId] = useState(null);
+  const [photoJob, setPhotoJob] = useState(null);
+  const photoLock = useRef(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const stockFilter = ['in', 'low', 'out'].includes(searchParams.get('stock')) ? searchParams.get('stock') : 'all';
   useLiveStock(setProducts);
@@ -374,10 +384,17 @@ export default function AdminProducts() {
   };
 
   const replacePhoto = async (product, file) => {
-    setPhotoBusyId(product.id);
+    if (!file || photoLock.current) return;
+    photoLock.current = true;
+    setPhotoJob({ id: product.id, percent: 4 });
     const previous = product.image_url;
     try {
-      const result = await uploadProductImage(file);
+      const result = await uploadProductImage(file, (percent) => {
+        setPhotoJob({ id: product.id, percent });
+      });
+      if (!result.url?.startsWith('http') || isInlineImageUrl(result.url)) {
+        throw Object.assign(new Error('STORAGE'), { code: 'STORAGE' });
+      }
       setProducts((rows) => rows.map((item) => (item.id === product.id ? { ...item, image_url: result.url } : item)));
       const { error } = await supabase.from('products').update({ image_url: result.url }).eq('id', product.id);
       if (error) {
@@ -385,17 +402,29 @@ export default function AdminProducts() {
         toast.error(t.imageFailed);
         return;
       }
-      toast.success(result.fallback ? t.imageFallback : t.imageSaved);
+      toast.success(t.imageSaved);
     } catch (error) {
-      toast.error(error?.code === 'TOO_LARGE' ? t.imageLarge : t.imageFailed);
+      const message = error?.code === 'TOO_LARGE'
+        ? t.imageLarge
+        : error?.code === 'HEIC'
+          ? t.imageHeic
+          : error?.code === 'DECODE' || error?.code === 'NOT_IMAGE' || error?.code === 'WEBP'
+            ? t.imageDecode
+            : t.imageFailed;
+      toast.error(message);
     } finally {
-      setPhotoBusyId(null);
+      photoLock.current = false;
+      setPhotoJob(null);
     }
   };
 
   const saveProduct = useCallback(async (payload) => {
     if (!payload.name || !Number.isFinite(payload.price) || !payload.category_id) {
       toast.error(t.required);
+      return;
+    }
+    if (isInlineImageUrl(payload.image_url)) {
+      toast.error(t.imageData);
       return;
     }
     setSubmitting(true);
@@ -528,7 +557,7 @@ export default function AdminProducts() {
                     <article key={p.id} className="rounded-2xl border border-stone-200 bg-sand p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-start gap-3">
-                          <ThumbEditor product={p} label={t.changePhoto} busy={photoBusyId === p.id} onPick={replacePhoto} />
+                          <ThumbEditor product={p} label={t.changePhoto} busy={photoJob?.id === p.id} percent={photoJob?.id === p.id ? photoJob.percent : 0} onPick={replacePhoto} />
                           <div className="min-w-0">
                           <h3 className="font-extrabold text-ink">{p.name}</h3>
                           <p className="mt-1 text-xs text-stone-500">{p.categories?.name || (lang === 'bn' ? 'হার্ডওয়্যার' : 'Hardware')} · {p.product_code || (lang === 'bn' ? 'পাইকারি' : 'Wholesale')}</p>
@@ -589,7 +618,7 @@ export default function AdminProducts() {
                         <tr key={p.id} className="border-t border-stone-100">
                           <td className="px-5 py-3 font-bold text-ink">
                             <div className="flex items-center gap-3">
-                              <ThumbEditor product={p} label={t.changePhoto} busy={photoBusyId === p.id} onPick={replacePhoto} />
+                              <ThumbEditor product={p} label={t.changePhoto} busy={photoJob?.id === p.id} percent={photoJob?.id === p.id ? photoJob.percent : 0} onPick={replacePhoto} />
                               <div>
                                 <p>{p.name}</p>
                                 <p className="text-[11px] font-semibold text-slate-500">
