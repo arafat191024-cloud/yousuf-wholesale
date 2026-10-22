@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useCatalog } from '../lib/useCatalog'
 import { categoryCopy } from '../lib/catalog'
 import { FEATURED_NAV, categoryHref } from '../lib/storeNav'
+import { HEADER_SHELL } from '../lib/layout'
 
 const pillClass = (active) =>
   `inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-bold whitespace-nowrap transition-all duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
@@ -70,9 +71,10 @@ export function CategorySubNav() {
 
   return (
     <div ref={rootRef} className="border-t border-slate-100">
+      <div className={HEADER_SHELL}>
       <div className="relative">
         <div className="no-scrollbar overflow-x-auto overscroll-x-contain whitespace-nowrap">
-          <div className="mx-auto flex w-max min-w-full max-w-6xl items-center gap-2 whitespace-nowrap px-3 py-2.5 sm:px-4">
+          <div className="flex w-max items-center gap-2 whitespace-nowrap py-2.5">
             <Link to="/" className={pillClass(homeActive)} aria-current={homeActive ? 'page' : undefined}>
               {label('হোম', 'Home')}
             </Link>
@@ -113,10 +115,11 @@ export function CategorySubNav() {
         </div>
         <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent md:hidden" aria-hidden="true" />
       </div>
+      </div>
 
       {menuOpen && (
-        <div className="border-t border-slate-100 bg-white px-3 py-3 sm:px-4">
-          <div className="mx-auto flex max-w-6xl flex-wrap gap-2">
+        <div className="border-t border-slate-100 bg-white py-3">
+          <div className={`${HEADER_SHELL} flex flex-wrap gap-2`}>
             {categories.length === 0 ? (
               <p className="text-sm text-slate-500">{t.loading}</p>
             ) : (

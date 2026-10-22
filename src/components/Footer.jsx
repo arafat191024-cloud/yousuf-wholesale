@@ -39,6 +39,7 @@ function prettyPhone(value) {
 }
 
 function footerPad(pathname, count) {
+  if (pathname === '/checkout') return 'pb-8 md:pb-10'
   const onCategory = pathname.startsWith('/category')
   const hasCart = count > 0 && pathname !== '/checkout'
   if (onCategory && hasCart) return 'pb-[calc(16rem+env(safe-area-inset-bottom))] md:pb-10'

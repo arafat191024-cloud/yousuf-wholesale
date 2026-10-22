@@ -25,7 +25,7 @@ export function scrollFieldIntoView(event) {
   }
 
   if (window.matchMedia('(max-width: 767px)').matches) {
-    window.setTimeout(run, 320)
+    window.setTimeout(run, 300)
   } else {
     run()
   }

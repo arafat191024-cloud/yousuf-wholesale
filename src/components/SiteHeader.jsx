@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { useLanguage } from '../context/LanguageContext'
 import { useCart } from '../context/CartContext'
@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext'
 import { LanguageToggle } from './LanguageToggle'
 import { CategorySubNav } from './CategorySubNav'
 import { SUPPORT } from '../lib/paymentConfig'
+import { HEADER_SHELL } from '../lib/layout'
+import { useHeaderAutoHide } from '../lib/useHeaderAutoHide'
 
 function IconPhone() {
   return (
@@ -24,11 +26,15 @@ function IconChat() {
 }
 
 export function SiteHeader() {
-  const { t } = useLanguage()
+  const { lang, t } = useLanguage()
   const { totalCount, setIsCartOpen } = useCart()
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [query, setQuery] = useState('')
+  const headerHidden = useHeaderAutoHide()
+  const isCheckout = location.pathname === '/checkout'
+  const collapsed = headerHidden && !isCheckout
 
   function onSearch(e) {
     e.preventDefault()
@@ -38,9 +44,38 @@ export function SiteHeader() {
 
   const iconBtn = 'inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/80 bg-white text-sapphire shadow-sm transition-all duration-200 ease-out hover:shadow-md'
 
+  function goBack() {
+    const idx = window.history.state?.idx
+    if (typeof idx === 'number' && idx > 0) navigate(-1)
+    else navigate('/')
+  }
+
   return (
-    <header id="site-header" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4">
+    <header
+      id="site-header"
+      className={`sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-md transition-transform md:translate-y-0 md:pointer-events-auto ${
+        collapsed ? 'pointer-events-none -translate-y-full duration-300' : 'translate-y-0 duration-200'
+      }`}
+    >
+      {isCheckout && (
+        <div className="relative flex h-12 items-center md:hidden">
+          <div className={`${HEADER_SHELL} flex h-12 items-center`}>
+            <button
+              type="button"
+              onClick={goBack}
+              className="inline-flex h-11 items-center text-sm font-bold text-ink"
+            >
+              ← {lang === 'bn' ? 'ফিরে যান' : 'Back'}
+            </button>
+          </div>
+          <p className="pointer-events-none absolute left-1/2 top-1/2 w-[min(18rem,68%)] -translate-x-1/2 -translate-y-1/2 truncate text-center text-sm font-extrabold text-ink">
+            {lang === 'bn' ? 'অর্ডার সম্পন্ন করুন (Checkout)' : 'Complete your order (Checkout)'}
+          </p>
+        </div>
+      )}
+
+      <div className={isCheckout ? 'hidden md:block' : undefined}>
+      <div className={`${HEADER_SHELL} flex items-center gap-2 py-2.5 sm:gap-3`}>
         <Link to="/" className="min-w-0 shrink-0">
           <span className="block text-[10px] font-bold text-brass">{t.importer}</span>
           <span className="block truncate text-base font-extrabold tracking-tight text-ink sm:text-lg">{t.shopName}</span>
@@ -114,7 +149,7 @@ export function SiteHeader() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 px-3 pb-3 md:hidden">
+      <div className={`${HEADER_SHELL} flex items-center gap-2 pb-3 md:hidden`}>
         <form onSubmit={onSearch} className="min-w-0 flex-1">
           <input
             value={query}
@@ -127,6 +162,7 @@ export function SiteHeader() {
         <LanguageToggle />
       </div>
       <CategorySubNav />
+      </div>
     </header>
   )
 }

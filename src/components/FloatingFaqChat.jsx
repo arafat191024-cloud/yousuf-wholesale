@@ -107,7 +107,7 @@ export function FloatingFaqChat() {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [open, messages, typing])
 
-  if (location.pathname.startsWith('/admin')) return null
+  if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/checkout')) return null
 
   function ask(faq) {
     if (typing) return

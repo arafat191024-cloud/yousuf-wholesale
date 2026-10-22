@@ -1,6 +1,6 @@
 import { DELIVERY_CHANNELS } from '../lib/deliveryChannels'
 
-export function DeliveryChannelFields({ lang, channel, note, onChannel, onNote, fieldClass }) {
+export function DeliveryChannelFields({ lang, channel, note, onChannel, onNote, onFocus, fieldClass }) {
   return (
     <div className="space-y-3">
       <label className="block text-xs font-bold text-slate-600">
@@ -11,6 +11,7 @@ export function DeliveryChannelFields({ lang, channel, note, onChannel, onNote, 
           required
           value={channel}
           onChange={(e) => onChannel(e.target.value)}
+          onFocus={onFocus}
           className={`${fieldClass} mt-1`}
         >
           <option value="">{lang === 'bn' ? 'পরিবহন মাধ্যম বাছুন' : 'Select a transport channel'}</option>
@@ -27,6 +28,7 @@ export function DeliveryChannelFields({ lang, channel, note, onChannel, onNote, 
           className={`${fieldClass} mt-1`}
           value={note}
           onChange={(e) => onNote(e.target.value)}
+          onFocus={onFocus}
           placeholder={lang === 'bn' ? 'যেমন: নবাবপুর শাখা থেকে রিসিভ করব' : 'e.g. Receive from Nawabpur branch'}
         />
       </label>

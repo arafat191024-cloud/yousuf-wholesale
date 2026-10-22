@@ -5,6 +5,7 @@ export function SearchableSelect({
   required,
   value,
   onChange,
+  onFocus,
   options,
   placeholder,
   searchPlaceholder,
@@ -47,6 +48,7 @@ export function SearchableSelect({
           setOpen((current) => !current)
           setQuery('')
         }}
+        onFocus={onFocus}
         className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-200/80 bg-white px-3 text-left text-sm font-semibold text-ink outline-none transition-all duration-150 focus:border-ink disabled:bg-slate-50 disabled:text-slate-400"
       >
         <span className={`truncate ${selected ? 'text-ink' : 'text-slate-400'}`}>
@@ -61,6 +63,7 @@ export function SearchableSelect({
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onFocus={onFocus}
               placeholder={searchPlaceholder}
               className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-ink"
             />

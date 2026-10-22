@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useCart } from '../context/CartContext'
 import { useLanguage } from '../context/LanguageContext'
@@ -20,7 +20,6 @@ import {
   needsTransactionId,
   paymentMethodLabel,
 } from '../lib/paymentConfig'
-import { scrollFieldIntoView } from '../lib/keyboardSafe'
 import {
   assertInStock,
   broadcastStock,
@@ -40,10 +39,17 @@ function readDraft(key, fallback = '') {
   return sessionStorage.getItem(key) || fallback
 }
 
+function handleInputFocus(e) {
+  setTimeout(() => {
+    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, 300)
+}
+
 export function Checkout() {
   const { cartItems, totalAmount, clearCart } = useCart()
   const { lang, t } = useLanguage()
   const { profile } = useAuth()
+  const navigate = useNavigate()
 
   const [customerName, setCustomerName] = useState(() => readDraft('ck_name'))
   const [customerPhone, setCustomerPhone] = useState(() => readDraft('ck_phone', localStorage.getItem('last_order_phone') || ''))
@@ -77,6 +83,11 @@ export function Checkout() {
     if (profile?.phone) setCustomerPhone((value) => value || profile.phone)
     if (profile?.address) setCustomerAddress((value) => value || profile.address)
   }, [profile])
+
+  useEffect(() => {
+    if (!orderSuccess) return
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [orderSuccess])
 
   const showPrepaid = needsTransactionId(paymentMethod)
   const fieldClass = 'h-11 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-sm outline-none transition-all duration-200 ease-out focus:border-ink focus:shadow-sm'
@@ -193,6 +204,7 @@ export function Checkout() {
         /* A bad local cache must not hide an order that already saved. */
       }
       setOrderSuccess(orderNumber)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       toast.success(t.orderSuccess)
       clearCart()
       setTransactionId('')
@@ -208,17 +220,24 @@ export function Checkout() {
 
   if (orderSuccess) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-8">
-        <div className="premium-card rounded-3xl px-6 py-10 text-center">
+      <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center px-4 py-8">
+        <div className="premium-card w-full rounded-3xl px-6 py-10 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-700">✓</div>
           <h1 className="text-2xl font-extrabold text-ink">{t.orderSuccess}</h1>
           <p className="mt-2 text-sm leading-relaxed text-slate-500">{t.orderSuccessBody}</p>
           <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
             {t.tracking}: <strong>#{orderSuccess}</strong>
           </div>
-          <Link to="/" className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-ink text-sm font-bold text-white transition-all duration-200 ease-out hover:bg-navy">
+          <button
+            type="button"
+            onClick={() => {
+              window.scrollTo(0, 0)
+              navigate('/')
+            }}
+            className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-ink text-sm font-bold text-white transition-all duration-200 ease-out hover:bg-navy"
+          >
             {t.gotIt}
-          </Link>
+          </button>
         </div>
       </div>
     )
@@ -227,7 +246,9 @@ export function Checkout() {
   if (cartItems.length === 0) {
     return (
       <div className="mx-auto max-w-lg px-4 py-8">
-        <BackButton fallback="/" />
+        <div className="hidden md:block">
+          <BackButton fallback="/" />
+        </div>
         <div className="mt-4">
           <EmptyState
             icon="🛒"
@@ -248,11 +269,13 @@ export function Checkout() {
   const bkash = PAYMENT_ACCOUNTS.bkash
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pt-5 pb-36 md:pb-8">
-      <BackButton fallback="/" />
-      <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink">{t.checkoutTitle}</h1>
+    <div className="mx-auto max-w-3xl px-4 pt-4 pb-60 md:pt-5 md:pb-8">
+      <div className="hidden md:block">
+        <BackButton fallback="/" />
+      </div>
+      <h1 className="mt-4 hidden text-2xl font-extrabold tracking-tight text-ink md:block">{t.checkoutTitle}</h1>
 
-      <form onSubmit={handleCheckout} onFocusCapture={scrollFieldIntoView} className="mt-5 grid gap-4">
+      <form onSubmit={handleCheckout} className="mt-5 grid gap-4">
         <section className="premium-card rounded-3xl p-4">
           <h2 className="text-sm font-extrabold text-ink">{t.reviewSection}</h2>
           <CartLines />
@@ -265,9 +288,9 @@ export function Checkout() {
         <section className="premium-card rounded-3xl p-4">
           <h2 className="text-sm font-extrabold text-ink">{t.contactSection}</h2>
           <div className="mt-3 grid gap-2">
-            <input className={fieldClass} placeholder={t.shopNameField} value={customerShop} onChange={(e) => setCustomerShop(e.target.value)} />
-            <input className={fieldClass} placeholder={t.yourName} value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-            <input className={fieldClass} type="tel" required placeholder={t.phoneRequired} value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+            <input className={fieldClass} placeholder={t.shopNameField} value={customerShop} onChange={(e) => setCustomerShop(e.target.value)} onFocus={handleInputFocus} />
+            <input className={fieldClass} placeholder={t.yourName} value={customerName} onChange={(e) => setCustomerName(e.target.value)} onFocus={handleInputFocus} />
+            <input className={fieldClass} type="tel" required placeholder={t.phoneRequired} value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} onFocus={handleInputFocus} />
             <SearchableSelect
               required
               label={lang === 'bn' ? 'জেলা' : 'District / জেলা'}
@@ -276,6 +299,7 @@ export function Checkout() {
                 setDistrict(value)
                 setUpazila('')
               }}
+              onFocus={handleInputFocus}
               options={districts}
               placeholder={lang === 'bn' ? 'জেলা খুঁজুন / বাছুন' : 'Search district'}
               searchPlaceholder={lang === 'bn' ? 'জেলার নাম লিখুন...' : 'Type a district...'}
@@ -287,10 +311,11 @@ export function Checkout() {
               onChange={setUpazila}
               options={areas}
               disabled={!district}
+              onFocus={handleInputFocus}
               placeholder={lang === 'bn' ? 'উপজেলা/থানা বাছুন' : 'Select upazila / thana'}
               searchPlaceholder={lang === 'bn' ? 'এরিয়া খুঁজুন...' : 'Search area...'}
             />
-            <input className={fieldClass} placeholder={lang === 'bn' ? 'বিস্তারিত ঠিকানা (বাড়ি, রোড, মার্কেট)' : 'Detailed address (house, road, market)'} value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+            <input className={fieldClass} placeholder={lang === 'bn' ? 'বিস্তারিত ঠিকানা (বাড়ি, রোড, মার্কেট)' : 'Detailed address (house, road, market)'} value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} onFocus={handleInputFocus} />
           </div>
         </section>
 
@@ -303,6 +328,7 @@ export function Checkout() {
               note={transportNote}
               onChannel={setDeliveryChannel}
               onNote={setTransportNote}
+              onFocus={handleInputFocus}
               fieldClass={fieldClass}
             />
           </div>
@@ -359,11 +385,11 @@ export function Checkout() {
               )}
 
               <label className="mt-3 block text-xs font-bold text-slate-600">{t.trxId}</label>
-              <input className={`${fieldClass} mt-1 font-mono`} value={transactionId} onChange={(e) => setTransactionId(e.target.value)} placeholder={t.trxPlaceholder} required />
+              <input className={`${fieldClass} mt-1 font-mono`} value={transactionId} onChange={(e) => setTransactionId(e.target.value)} onFocus={handleInputFocus} placeholder={t.trxPlaceholder} required />
               <label className="mt-2 block text-xs font-bold text-slate-600">{t.senderNumber}</label>
-              <input className={`${fieldClass} mt-1`} type="tel" value={senderNumber} onChange={(e) => setSenderNumber(e.target.value)} placeholder={t.senderPlaceholder} required />
+              <input className={`${fieldClass} mt-1`} type="tel" value={senderNumber} onChange={(e) => setSenderNumber(e.target.value)} onFocus={handleInputFocus} placeholder={t.senderPlaceholder} required />
               <label className="mt-2 block text-xs font-bold text-slate-600">{t.receiptRef}</label>
-              <input className={`${fieldClass} mt-1`} value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder={t.receiptPlaceholder} />
+              <input className={`${fieldClass} mt-1`} value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} onFocus={handleInputFocus} placeholder={t.receiptPlaceholder} />
             </div>
           )}
         </section>
