@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { BackButton } from '../components/BackButton'
+import { scrollFieldIntoView } from '../lib/keyboardSafe'
 
 export function Signup() {
   const { signUp } = useAuth()
@@ -45,11 +46,11 @@ export function Signup() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-6">
+    <div className="mx-auto max-w-md px-4 pt-6 pb-36 md:pb-8">
       <BackButton fallback="/" />
       <div className="premium-card mt-4 rounded-3xl p-6">
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">{t.signup}</h1>
-        <form onSubmit={handleSubmit} className="mt-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} onFocusCapture={scrollFieldIntoView} className="mt-5 flex flex-col gap-3">
           <input className={field} placeholder={t.yourName} value={form.name} onChange={update('name')} required />
           <input className={field} placeholder={t.phoneRequired} value={form.phone} onChange={update('phone')} required />
           <input className={field} type="email" placeholder={t.email} value={form.email} onChange={update('email')} required />

@@ -11,11 +11,15 @@ import { Signup } from './pages/Signup';
 import { Orders } from './pages/Orders';
 import { SearchPage } from './pages/SearchPage';
 import { Checkout } from './pages/Checkout';
+import { OffersPage } from './pages/OffersPage';
+import { PolicyPage } from './pages/PolicyPage';
 
 import { CartDrawer } from './components/CartDrawer';
 import { AddedSheet } from './components/AddedSheet';
 import { ScrollManager } from './components/ScrollManager';
 import { SiteHeader } from './components/SiteHeader';
+import { Footer } from './components/Footer';
+import { FloatingFaqChat } from './components/FloatingFaqChat';
 import { BottomNav, CheckoutFab } from './components/BottomNav';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -33,7 +37,8 @@ function Shell({ children }) {
   return (
     <>
       <SiteHeader />
-      <main className="pb-36 md:pb-10">{children}</main>
+      <main>{children}</main>
+      <Footer />
       <CheckoutFab />
       <BottomNav />
     </>
@@ -49,11 +54,15 @@ export default function App() {
             <ScrollManager />
             <CartDrawer />
             <AddedSheet />
+            <FloatingFaqChat />
             <Shell>
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/category/:slug" element={<CategoryPage />} />
                 <Route path="/search" element={<SearchPage />} />
+                <Route path="/offers" element={<OffersPage />} />
+                <Route path="/terms" element={<PolicyPage kind="terms" />} />
+                <Route path="/returns" element={<PolicyPage kind="returns" />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/orders" element={<Orders />} />

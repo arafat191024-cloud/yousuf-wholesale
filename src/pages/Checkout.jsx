@@ -20,6 +20,7 @@ import {
   needsTransactionId,
   paymentMethodLabel,
 } from '../lib/paymentConfig'
+import { scrollFieldIntoView } from '../lib/keyboardSafe'
 import {
   assertInStock,
   broadcastStock,
@@ -247,11 +248,11 @@ export function Checkout() {
   const bkash = PAYMENT_ACCOUNTS.bkash
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-5">
+    <div className="mx-auto max-w-3xl px-4 pt-5 pb-36 md:pb-8">
       <BackButton fallback="/" />
       <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink">{t.checkoutTitle}</h1>
 
-      <form onSubmit={handleCheckout} className="mt-5 grid gap-4">
+      <form onSubmit={handleCheckout} onFocusCapture={scrollFieldIntoView} className="mt-5 grid gap-4">
         <section className="premium-card rounded-3xl p-4">
           <h2 className="text-sm font-extrabold text-ink">{t.reviewSection}</h2>
           <CartLines />

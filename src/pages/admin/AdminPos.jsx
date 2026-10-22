@@ -13,6 +13,7 @@ import { DeliveryChannelFields } from '../../components/DeliveryChannelFields';
 import { deliveryChannelLabel } from '../../lib/deliveryChannels';
 import { insertOrder } from '../../lib/orderInsert';
 import { AdminStockAlert } from '../../components/AdminStockAlert';
+import { scrollFieldIntoView } from '../../lib/keyboardSafe';
 import {
   aggregateQty,
   assertInStock,
@@ -350,7 +351,7 @@ export default function AdminPos() {
   }
 
   return (
-    <div className="min-h-screen bg-paper px-4 py-6">
+    <div className="min-h-screen bg-paper px-4 pt-6 pb-36 md:pb-10" onFocusCapture={scrollFieldIntoView}>
       <div className="mx-auto max-w-6xl">
         <AdminStockAlert lang={lang} />
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm">

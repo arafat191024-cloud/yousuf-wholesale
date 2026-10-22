@@ -4,6 +4,7 @@ import { categoryCopy } from '../lib/catalog'
 import { SERIES_OPTIONS, formatSizeLabel, productSeries, productSizes } from '../lib/productMeta'
 import { imageFileFromList, isInlineImageUrl, uploadProductImage } from '../lib/productImage'
 import { useScrollLock } from '../lib/useScrollLock'
+import { scrollFieldIntoView } from '../lib/keyboardSafe'
 
 const copy = {
   bn: {
@@ -205,8 +206,8 @@ export function ProductFormDrawer({ lang, product, categories, submitting, onClo
             {t.cancel}
           </button>
         </div>
-        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <form onSubmit={submit} onFocusCapture={scrollFieldIntoView} className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 space-y-4 overflow-y-auto px-5 pt-4 pb-36">
             <div>
               <p className="text-xs font-bold text-slate-600">{t.image}</p>
               <div className="mt-2 flex items-start gap-3">

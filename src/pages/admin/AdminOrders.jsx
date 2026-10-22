@@ -25,6 +25,7 @@ import {
   paymentMethodLabel,
 } from '../../lib/paymentConfig';
 import { DELIVERY_CHANNELS, deliveryChannelLabel } from '../../lib/deliveryChannels';
+import { scrollFieldIntoView } from '../../lib/keyboardSafe';
 import { AdminStockAlert } from '../../components/AdminStockAlert';
 
 function showPaymentDetail(method, value) {
@@ -450,7 +451,7 @@ export default function AdminOrders() {
   const actionBtn = 'inline-flex min-h-11 items-center rounded-xl border border-stone-200 bg-white px-3 text-xs font-bold transition-all duration-200 hover:bg-sand';
 
   return (
-    <div className="min-h-screen bg-paper px-4 py-6">
+    <div className="min-h-screen bg-paper px-4 pt-6 pb-36 md:pb-10" onFocusCapture={scrollFieldIntoView}>
       <div className="mx-auto max-w-6xl">
         <AdminStockAlert lang={lang} />
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm">
@@ -690,7 +691,7 @@ export default function AdminOrders() {
 
         {editingOrder && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/50 p-4 transition-all duration-200">
-            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl">
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white px-5 pt-5 pb-36 shadow-2xl" onFocusCapture={scrollFieldIntoView}>
               <h3 className="text-lg font-extrabold text-ink">#{editingOrder.order_number}</h3>
               <div className="mt-4 flex flex-col gap-3">
                 <input

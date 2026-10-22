@@ -6,7 +6,6 @@ import { categoryCopy } from '../lib/catalog';
 import { ProductSkeleton } from '../components/Skeletons';
 import { EmptyState } from '../components/EmptyState';
 import { BackButton } from '../components/BackButton';
-import { CategorySwitcher } from '../components/CategorySwitcher';
 import { ProductCard } from '../components/ProductCard';
 import { CatalogFilters, FilterFab, MobileFilterDrawer, PRICE_MAX, PRICE_MIN, SortSelect } from '../components/CatalogFilters';
 import { collectSeries, collectSizes, matchesSeries, matchesSize, productSeries, productSizes } from '../lib/productMeta';
@@ -226,9 +225,6 @@ export default function CategoryPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-4 pb-16 md:pb-4">
-      <div className="md:hidden">
-        <CategorySwitcher categories={categories} activeSlug={slug} counts={counts} />
-      </div>
       <BackButton fallback="/" />
 
       {loading ? (
@@ -250,7 +246,7 @@ export default function CategoryPage() {
       ) : (
         <div className="mt-4 flex flex-col gap-5 md:flex-row md:items-start">
           <aside className="hidden w-72 flex-shrink-0 md:block">
-            <div className="sticky top-20 self-start max-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="sticky top-36 self-start max-h-[calc(100vh-10rem)] space-y-6 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
               <CatalogFilters {...filterProps} />
             </div>
           </aside>

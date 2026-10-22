@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { LanguageToggle } from './LanguageToggle'
+import { CategorySubNav } from './CategorySubNav'
 import { SUPPORT } from '../lib/paymentConfig'
 
 function IconPhone() {
@@ -125,6 +126,7 @@ export function SiteHeader() {
         </form>
         <LanguageToggle />
       </div>
+      <CategorySubNav />
     </header>
   )
 }

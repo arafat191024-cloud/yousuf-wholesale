@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useLanguage } from '../../context/LanguageContext';
 import { BackButton } from '../../components/BackButton';
 import { LanguageToggle } from '../../components/LanguageToggle';
+import { scrollFieldIntoView } from '../../lib/keyboardSafe';
 
 const ALLOWED_ADMIN_EMAIL = 'ahariyan173@gmail.com';
 
@@ -69,7 +70,7 @@ export default function AdminLogin() {
   const field = 'h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none transition-all duration-200 focus:border-ink';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-paper px-4 py-8">
+    <div className="flex min-h-screen items-center justify-center bg-paper px-4 pt-8 pb-36">
       <div className="w-full max-w-sm">
         <BackButton fallback="/" className="mb-4" />
         <div className="premium-card rounded-3xl p-6">
@@ -87,7 +88,7 @@ export default function AdminLogin() {
           </p>
         )}
 
-        <form onSubmit={handleLogin} className="flex flex-col gap-3">
+        <form onSubmit={handleLogin} onFocusCapture={scrollFieldIntoView} className="flex flex-col gap-3">
           <label className="text-xs font-bold text-stone-600">
             {copy.email}
             <input className={`${field} mt-1`} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />

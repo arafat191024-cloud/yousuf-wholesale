@@ -37,7 +37,7 @@ export function Home() {
         </div>
       </section>
 
-      <div id="categories" className="scroll-mt-28 pt-6">
+      <div id="categories" className="scroll-mt-48 pt-6">
         <div className="mb-4 flex items-end justify-between gap-3">
           <h2 className="text-lg font-extrabold tracking-tight text-ink">{t.categories}</h2>
         </div>

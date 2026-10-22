@@ -12,6 +12,7 @@ import { insertProductRow, updateProductRow } from '../../lib/orderInsert';
 import { productSearchText, productSeries, productSizes } from '../../lib/productMeta';
 import { imageFileFromList, isInlineImageUrl, uploadProductImage } from '../../lib/productImage';
 import { useLiveStock } from '../../lib/stockSync';
+import { scrollFieldIntoView } from '../../lib/keyboardSafe';
 
 const copy = {
   bn: {
@@ -468,7 +469,7 @@ export default function AdminProducts() {
     'inline-flex min-h-11 items-center rounded-xl border border-stone-200 bg-white px-3 text-xs font-bold transition-all duration-200 hover:bg-sand';
 
   return (
-    <div className="min-h-screen bg-paper px-4 py-6">
+    <div className="min-h-screen bg-paper px-4 pt-6 pb-36 md:pb-10" onFocusCapture={scrollFieldIntoView}>
       <div className="mx-auto max-w-6xl">
         <AdminStockAlert lang={lang} />
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm">

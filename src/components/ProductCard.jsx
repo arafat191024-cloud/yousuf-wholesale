@@ -6,6 +6,7 @@ import { fallbackImage } from '../lib/catalog'
 import { useScrollLock } from '../lib/useScrollLock'
 import { QtyStepper } from './QtyStepper'
 import { availableUnits, priceUnitLabel, productSeries, productSizes } from '../lib/productMeta'
+import { scrollFieldIntoView } from '../lib/keyboardSafe'
 
 export const ProductCard = memo(function ProductCard({ product, slug }) {
   const { addToCart } = useCart()
@@ -85,7 +86,8 @@ export const ProductCard = memo(function ProductCard({ product, slug }) {
             role="dialog"
             aria-modal="true"
             className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-200/80 bg-white shadow-2xl sm:rounded-3xl"
-            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+            style={{ paddingBottom: 'max(9rem, env(safe-area-inset-bottom))' }}
+            onFocusCapture={scrollFieldIntoView}
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
               <button

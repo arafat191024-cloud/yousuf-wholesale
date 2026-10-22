@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { categoryCopy } from '../lib/catalog'
 import { useScrollLock } from '../lib/useScrollLock'
 import { useCart } from '../context/CartContext'
+import { scrollFieldIntoView } from '../lib/keyboardSafe'
 
 const PRICE_MIN = 0
 const PRICE_MAX = 50000
@@ -270,14 +271,14 @@ export function MobileFilterDrawer({ open, onClose, onApply, lang, t, children }
   return (
     <div className="fixed inset-0 z-[70] md:hidden">
       <button type="button" aria-label={t.close} className="absolute inset-0 bg-ink/50" onClick={onClose} />
-      <div className="sheet-up absolute inset-x-0 bottom-0 flex max-h-[86vh] flex-col rounded-t-3xl bg-white shadow-2xl">
+      <div className="sheet-up absolute inset-x-0 bottom-0 flex max-h-[86vh] flex-col rounded-t-3xl bg-white shadow-2xl" onFocusCapture={scrollFieldIntoView}>
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
           <p className="text-base font-extrabold text-ink">{lang === 'bn' ? 'ফিল্টার ও সর্ট' : 'Filter & Sort'}</p>
           <button type="button" onClick={onClose} className="inline-flex h-11 items-center rounded-xl border border-slate-200 px-3 text-xs font-bold">
             {t.close}
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-36">{children}</div>
         <div className="border-t border-slate-100 px-4 py-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}>
           <button
             type="button"

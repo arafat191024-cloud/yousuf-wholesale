@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { BackButton } from '../components/BackButton'
+import { scrollFieldIntoView } from '../lib/keyboardSafe'
 
 function friendlyAuthError(message, t) {
   const text = String(message || '').toLowerCase()
@@ -35,11 +36,11 @@ export function Login() {
   const field = 'h-11 w-full rounded-xl border border-slate-200/80 px-3 text-sm outline-none transition-all duration-200 ease-out focus:border-ink'
 
   return (
-    <div className="mx-auto max-w-md px-4 py-6">
+    <div className="mx-auto max-w-md px-4 pt-6 pb-36 md:pb-8">
       <BackButton fallback="/" />
       <div className="premium-card mt-4 rounded-3xl p-6">
         <h1 className="text-2xl font-extrabold tracking-tight text-ink">{t.login}</h1>
-        <form onSubmit={handleSubmit} className="mt-5 flex flex-col gap-3">
+        <form onSubmit={handleSubmit} onFocusCapture={scrollFieldIntoView} className="mt-5 flex flex-col gap-3">
           <input className={field} type="email" placeholder={t.email} value={email} onChange={(e) => setEmail(e.target.value)} required />
           <input className={field} type="password" placeholder={t.password} value={password} onChange={(e) => setPassword(e.target.value)} required />
           {error && <p className="text-sm font-semibold text-red-600">{error}</p>}

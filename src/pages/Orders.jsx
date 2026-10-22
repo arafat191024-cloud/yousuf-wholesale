@@ -7,6 +7,7 @@ import { EmptyState } from '../components/EmptyState'
 import { isPaymentFailed, isPaymentVerified, paymentMethodLabel } from '../lib/paymentConfig'
 import { orderStatusLabel, formatTaka } from '../lib/format'
 import { BackButton } from '../components/BackButton'
+import { scrollFieldIntoView } from '../lib/keyboardSafe'
 
 function OrderCard({ order, lang, t }) {
   const items = Array.isArray(order.items) ? order.items : []
@@ -139,7 +140,7 @@ export function Orders() {
   }, [user, authLoading])
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-5">
+    <div className="mx-auto max-w-3xl px-4 pt-5 pb-36 md:pb-8" onFocusCapture={scrollFieldIntoView}>
       <BackButton fallback="/" />
       <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink">{t.ordersTitle}</h1>
       <p className="mt-2 text-sm text-slate-500">{t.ordersGuest}</p>
