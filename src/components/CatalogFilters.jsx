@@ -2,7 +2,7 @@ import { memo, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { categoryCopy } from '../lib/catalog'
 import { useScrollLock } from '../lib/useScrollLock'
-import { useCart } from '../context/CartContext'
+import { useOverlayHistory } from '../lib/useOverlayHistory'
 import { scrollFieldIntoView } from '../lib/keyboardSafe'
 
 const PRICE_MIN = 0
@@ -266,15 +266,16 @@ export const CatalogFilters = memo(function CatalogFilters({
 })
 
 export function MobileFilterDrawer({ open, onClose, onApply, lang, t, children }) {
+  const requestClose = useOverlayHistory(open, onClose)
   useScrollLock(open)
   if (!open) return null
   return (
     <div className="fixed inset-0 z-[70] md:hidden">
-      <button type="button" aria-label={t.close} className="absolute inset-0 bg-ink/50" onClick={onClose} />
+      <button type="button" aria-label={t.close} className="absolute inset-0 bg-ink/50" onClick={requestClose} />
       <div className="sheet-up absolute inset-x-0 bottom-0 flex max-h-[86vh] flex-col rounded-t-3xl bg-white shadow-2xl" onFocusCapture={scrollFieldIntoView}>
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
           <p className="text-base font-extrabold text-ink">{lang === 'bn' ? 'ফিল্টার ও সর্ট' : 'Filter & Sort'}</p>
-          <button type="button" onClick={onClose} className="inline-flex h-11 items-center rounded-xl border border-slate-200 px-3 text-xs font-bold">
+          <button type="button" onClick={requestClose} className="inline-flex h-11 items-center rounded-xl border border-slate-200 px-3 text-xs font-bold">
             {t.close}
           </button>
         </div>
@@ -282,7 +283,10 @@ export function MobileFilterDrawer({ open, onClose, onApply, lang, t, children }
         <div className="border-t border-slate-100 px-4 py-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}>
           <button
             type="button"
-            onClick={onApply}
+            onClick={() => {
+              onApply?.()
+              requestClose()
+            }}
             className="h-12 w-full rounded-2xl bg-ink text-sm font-bold text-white transition-all duration-150 transform-gpu active:scale-95"
           >
             {lang === 'bn' ? 'ফিল্টার প্রয়োগ করুন' : 'Apply Filters'}
@@ -294,12 +298,10 @@ export function MobileFilterDrawer({ open, onClose, onApply, lang, t, children }
 }
 
 export function FilterFab({ lang, onClick, count }) {
-  const { totalCount } = useCart()
-  const offset = totalCount > 0 ? '8.75rem' : '4.25rem'
   return (
     <div
       className="fixed inset-x-0 z-40 px-3 md:hidden"
-      style={{ bottom: `calc(${offset} + env(safe-area-inset-bottom))` }}
+      style={{ bottom: 'calc(4.25rem + env(safe-area-inset-bottom))' }}
     >
       <button
         type="button"

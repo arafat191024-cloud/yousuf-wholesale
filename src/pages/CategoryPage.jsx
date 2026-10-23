@@ -28,6 +28,15 @@ function countLabel(count, lang) {
   return lang === 'bn' ? `দেখাচ্ছে ${formatted}টি পণ্য` : `Showing ${formatted} wholesale items`;
 }
 
+function readFilters(slug) {
+  try {
+    const raw = sessionStorage.getItem(`catalog-filters:${slug}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 const EMPTY_FILTERS = {
   size: 'all',
   series: 'all',
@@ -42,25 +51,42 @@ export default function CategoryPage() {
   const { lang, t } = useLanguage();
   const { categories, counts, products: catalog, loading } = useCatalog();
 
-  const [size, setSize] = useState('all');
-  const [series, setSeries] = useState('all');
-  const [priceLo, setPriceLo] = useState(PRICE_MIN);
-  const [priceHi, setPriceHi] = useState(PRICE_MAX);
-  const [inStock, setInStock] = useState(false);
-  const [sort, setSort] = useState('featured');
+  const [size, setSize] = useState(() => readFilters(slug)?.size || 'all');
+  const [series, setSeries] = useState(() => readFilters(slug)?.series || 'all');
+  const [priceLo, setPriceLo] = useState(() => {
+    const saved = readFilters(slug);
+    return Number.isFinite(saved?.priceLo) ? saved.priceLo : PRICE_MIN;
+  });
+  const [priceHi, setPriceHi] = useState(() => {
+    const saved = readFilters(slug);
+    return Number.isFinite(saved?.priceHi) ? saved.priceHi : PRICE_MAX;
+  });
+  const [inStock, setInStock] = useState(() => Boolean(readFilters(slug)?.inStock));
+  const [sort, setSort] = useState(() => readFilters(slug)?.sort || 'featured');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [draft, setDraft] = useState(null);
 
   useEffect(() => {
-    setSize('all');
-    setSeries('all');
-    setPriceLo(PRICE_MIN);
-    setPriceHi(PRICE_MAX);
-    setInStock(false);
-    setSort('featured');
+    const saved = readFilters(slug);
+    setSize(saved?.size || 'all');
+    setSeries(saved?.series || 'all');
+    setPriceLo(Number.isFinite(saved?.priceLo) ? saved.priceLo : PRICE_MIN);
+    setPriceHi(Number.isFinite(saved?.priceHi) ? saved.priceHi : PRICE_MAX);
+    setInStock(Boolean(saved?.inStock));
+    setSort(saved?.sort || 'featured');
     setMobileOpen(false);
     setDraft(null);
   }, [slug]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(`catalog-filters:${slug}`, JSON.stringify({
+        size, series, priceLo, priceHi, inStock, sort,
+      }));
+    } catch {
+      /* Private mode can block session storage. */
+    }
+  }, [slug, size, series, priceLo, priceHi, inStock, sort]);
 
   const category = useMemo(
     () => categories.find((item) => item.slug === slug) || null,

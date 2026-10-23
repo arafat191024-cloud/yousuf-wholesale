@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { MessageCircle } from 'lucide-react'
-import { useCart } from '../context/CartContext'
 import { useLanguage } from '../context/LanguageContext'
 import { SUPPORT } from '../lib/paymentConfig'
 import { subscribeHelpDesk } from '../lib/helpDesk'
+import { useOverlayHistory } from '../lib/useOverlayHistory'
 
 /**
  * Live agent line. Digits only, with country code.
@@ -53,14 +53,6 @@ const WA_TEXT = {
   en: 'Assalamu alaikum! I would like to talk about a wholesale order from Yousuf Wholesale.',
 }
 
-function placement(pathname, totalCount) {
-  const onCategory = pathname.startsWith('/category')
-  const hasCart = totalCount > 0 && pathname !== '/checkout'
-  if (onCategory && hasCart) return 'bottom-[calc(12.5rem+env(safe-area-inset-bottom))] md:bottom-6'
-  if (onCategory || hasCart) return 'bottom-[calc(8.25rem+env(safe-area-inset-bottom))] md:bottom-6'
-  return 'bottom-[calc(5.25rem+env(safe-area-inset-bottom))] md:bottom-6'
-}
-
 function TypingBubble() {
   return (
     <div className="mr-auto flex items-center gap-1 rounded-2xl rounded-bl-md bg-slate-100 px-3 py-3" aria-hidden="true">
@@ -77,9 +69,10 @@ function TypingBubble() {
 
 export function FloatingFaqChat() {
   const { lang, t } = useLanguage()
-  const { totalCount } = useCart()
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(() => typeof window !== 'undefined' && window.scrollY > 300)
+  const closeChat = useOverlayHistory(open, () => setOpen(false))
   const [typing, setTyping] = useState(false)
   const [messages, setMessages] = useState([])
   const idRef = useRef(0)
@@ -93,14 +86,23 @@ export function FloatingFaqChat() {
   useEffect(() => () => window.clearTimeout(timerRef.current), [])
 
   useEffect(() => {
+    function onScroll() {
+      setScrolled(window.scrollY > 300)
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
     if (!open) return undefined
     closeRef.current?.focus()
     function onKey(event) {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape') closeChat()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open])
+  }, [open, closeChat])
 
   useEffect(() => {
     if (!open) return
@@ -108,6 +110,7 @@ export function FloatingFaqChat() {
   }, [open, messages, typing])
 
   if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/checkout')) return null
+  if (!open && !scrolled) return null
 
   function ask(faq) {
     if (typing) return
@@ -132,7 +135,7 @@ export function FloatingFaqChat() {
   const waHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(bn ? WA_TEXT.bn : WA_TEXT.en)}`
 
   return (
-    <div className={`fixed right-4 z-50 flex flex-col items-end gap-3 md:right-6 ${placement(location.pathname, totalCount)}`}>
+    <div className="fixed bottom-20 right-4 z-40 flex flex-col items-end gap-3 md:bottom-6 md:right-6">
       {open && (
         <section
           role="dialog"
@@ -153,7 +156,7 @@ export function FloatingFaqChat() {
             <button
               ref={closeRef}
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={closeChat}
               className="inline-flex h-11 w-11 items-center justify-center rounded-full text-lg font-bold text-white hover:bg-white/10"
               aria-label={t.close}
             >
@@ -212,18 +215,17 @@ export function FloatingFaqChat() {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex h-14 items-center gap-2 rounded-full bg-ink pl-3 pr-4 text-sm font-bold text-white shadow-lg transition-all duration-200 hover:bg-navy hover:shadow-xl"
+          className="relative inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition-all duration-200 sm:h-14 sm:w-auto sm:gap-2 sm:bg-ink sm:pl-3 sm:pr-4 sm:text-sm sm:font-bold sm:hover:bg-navy"
           aria-expanded={false}
           aria-haspopup="dialog"
+          aria-label={bn ? 'প্রশ্ন আছে?' : 'Need help?'}
         >
-          <span className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
-            <MessageCircle className="h-5 w-5" aria-hidden="true" />
-            <span className="absolute -right-0.5 -top-0.5 flex h-3 w-3">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-400" />
-            </span>
+          <MessageCircle className="h-5 w-5" aria-hidden="true" />
+          <span className="absolute right-1 top-1 flex h-2.5 w-2.5 sm:right-3 sm:top-3">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
           </span>
-          {bn ? 'প্রশ্ন আছে?' : 'Need help?'}
+          <span className="hidden sm:inline">{bn ? 'প্রশ্ন আছে?' : 'Need help?'}</span>
         </button>
       )}
     </div>

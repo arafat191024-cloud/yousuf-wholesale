@@ -482,6 +482,7 @@ export default function AdminProducts() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/admin/orders" className={actionBtn}>{t.orders}</Link>
+            <Link to="/admin/banners" className={actionBtn}>{lang === 'bn' ? 'ব্যানার' : 'Banners'}</Link>
             <Link to="/admin/pos" className={actionBtn}>{t.memo}</Link>
             <LanguageToggle />
             <button

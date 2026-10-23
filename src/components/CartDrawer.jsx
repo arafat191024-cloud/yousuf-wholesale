@@ -6,6 +6,7 @@ import { useScrollLock } from '../lib/useScrollLock';
 import { formatTaka } from '../lib/format';
 import { EmptyState } from './EmptyState';
 import { CartLines } from './CartLines';
+import { useOverlayHistory } from '../lib/useOverlayHistory';
 
 export function CartDrawer() {
   const { cartItems, isCartOpen, setIsCartOpen, totalAmount, clearCart } = useCart();
@@ -14,13 +15,10 @@ export function CartDrawer() {
   const navigate = useNavigate();
   const isAdmin = location.pathname.startsWith('/admin');
   const open = isCartOpen && !isAdmin;
+  const close = useOverlayHistory(open, () => setIsCartOpen(false));
   useScrollLock(open);
 
   if (isAdmin) return null;
-
-  function close() {
-    setIsCartOpen(false);
-  }
 
   function checkout() {
     setIsCartOpen(false);

@@ -9,6 +9,7 @@ import { CategorySubNav } from './CategorySubNav'
 import { SUPPORT } from '../lib/paymentConfig'
 import { HEADER_SHELL } from '../lib/layout'
 import { useHeaderAutoHide } from '../lib/useHeaderAutoHide'
+import { useOverlayHistory } from '../lib/useOverlayHistory'
 
 function IconPhone() {
   return (
@@ -50,6 +51,8 @@ export function SiteHeader() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchTerm, setSearchTerm] = useState('')
+  const homeSearch = location.pathname === '/' && searchTerm.trim().length > 0
+  useOverlayHistory(homeSearch, () => setSearchTerm(''), 'search')
   const headerHidden = useHeaderAutoHide()
   const isCheckout = location.pathname === '/checkout'
   const collapsed = headerHidden && !isCheckout
@@ -76,7 +79,8 @@ export function SiteHeader() {
   function onSearch(e) {
     e.preventDefault()
     const q = searchTerm.trim()
-    navigate(q ? `/search?q=${encodeURIComponent(q)}` : '/')
+    const target = q ? `/search?q=${encodeURIComponent(q)}` : '/'
+    navigate(target, { replace: window.history.state?.overlay === 'search' })
   }
 
   const iconBtn = 'inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/80 bg-white text-sapphire shadow-sm transition-all duration-200 ease-out hover:shadow-md'

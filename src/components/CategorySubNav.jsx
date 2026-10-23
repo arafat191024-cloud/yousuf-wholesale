@@ -6,6 +6,7 @@ import { useCatalog } from '../lib/useCatalog'
 import { categoryCopy } from '../lib/catalog'
 import { FEATURED_NAV, categoryHref } from '../lib/storeNav'
 import { HEADER_SHELL } from '../lib/layout'
+import { useOverlayHistory } from '../lib/useOverlayHistory'
 
 const pillClass = (active) =>
   `inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-bold whitespace-nowrap transition-all duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
@@ -21,6 +22,7 @@ export function CategorySubNav({ onHome }) {
   const navigate = useNavigate()
   const rootRef = useRef(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const closeMenu = useOverlayHistory(menuOpen, () => setMenuOpen(false))
 
   const slug = location.pathname.startsWith('/category/')
     ? decodeURIComponent(location.pathname.split('/')[2] || '')
@@ -36,7 +38,7 @@ export function CategorySubNav({ onHome }) {
       if (!rootRef.current?.contains(event.target)) setMenuOpen(false)
     }
     function onKey(event) {
-      if (event.key === 'Escape') setMenuOpen(false)
+      if (event.key === 'Escape') closeMenu()
     }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
@@ -89,7 +91,7 @@ export function CategorySubNav({ onHome }) {
               className={pillClass(categoriesActive || menuOpen)}
               aria-expanded={menuOpen}
               aria-haspopup="true"
-              onClick={() => setMenuOpen((open) => !open)}
+              onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
             >
               {label('ক্যাটাগরি', 'Categories')}
               <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${menuOpen ? 'rotate-180' : ''}`} aria-hidden="true" />

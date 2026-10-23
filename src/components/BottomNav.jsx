@@ -1,7 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useLanguage } from '../context/LanguageContext'
-import { formatTaka } from '../lib/format'
 
 function IconHome() {
   return (
@@ -97,31 +96,5 @@ export function BottomNav() {
         </button>
       </div>
     </nav>
-  )
-}
-
-export function CheckoutFab() {
-  const { lang, t } = useLanguage()
-  const { cartItems, totalAmount, totalCount, setIsCartOpen } = useCart()
-  const location = useLocation()
-
-  if (!cartItems.length || location.pathname.startsWith('/admin') || location.pathname === '/checkout') return null
-
-  return (
-    <div
-      className="fixed inset-x-0 z-30 px-4 md:hidden"
-      style={{ bottom: 'calc(4.25rem + env(safe-area-inset-bottom))' }}
-    >
-      <button
-        type="button"
-        onClick={() => setIsCartOpen(true)}
-        className="flex h-12 w-full items-center justify-between rounded-2xl bg-ink px-4 text-white shadow-lg transition-all duration-200 ease-out active:scale-[0.99]"
-      >
-        <span className="text-sm font-bold">{t.viewCart}</span>
-        <span className="text-sm font-extrabold">
-          {totalCount} · {formatTaka(totalAmount, lang)}
-        </span>
-      </button>
-    </div>
   )
 }

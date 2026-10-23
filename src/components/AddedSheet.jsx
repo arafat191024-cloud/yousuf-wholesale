@@ -4,11 +4,13 @@ import { useLanguage } from '../context/LanguageContext'
 import { useScrollLock } from '../lib/useScrollLock'
 import { formatTaka } from '../lib/format'
 import { fallbackImage } from '../lib/catalog'
+import { useOverlayHistory } from '../lib/useOverlayHistory'
 
 export function AddedSheet() {
   const navigate = useNavigate()
   const { addedOpen, setAddedOpen, addedItem, cartItems, updateQuantity, totalAmount, setIsCartOpen } = useCart()
   const { lang, t } = useLanguage()
+  const closeSheet = useOverlayHistory(Boolean(addedOpen && addedItem), () => setAddedOpen(false))
   useScrollLock(addedOpen)
 
   if (!addedOpen || !addedItem) return null
@@ -19,7 +21,7 @@ export function AddedSheet() {
   const lineTotal = unitPrice * quantity
 
   function continueShopping() {
-    setAddedOpen(false)
+    closeSheet()
   }
 
   function proceed() {

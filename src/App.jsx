@@ -21,13 +21,14 @@ import { ScrollManager } from './components/ScrollManager';
 import { SiteHeader } from './components/SiteHeader';
 import { Footer } from './components/Footer';
 import { FloatingFaqChat } from './components/FloatingFaqChat';
-import { BottomNav, CheckoutFab } from './components/BottomNav';
+import { BottomNav } from './components/BottomNav';
 import ProtectedRoute from './components/ProtectedRoute';
 
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminOrders from './pages/admin/AdminOrders';
 import AdminProducts from './pages/admin/AdminProducts';
 import AdminPos from './pages/admin/AdminPos';
+import AdminBanners from './pages/admin/AdminBanners';
 
 function Shell({ children }) {
   const location = useLocation();
@@ -40,7 +41,6 @@ function Shell({ children }) {
       <SiteHeader />
       <main>{children}</main>
       <Footer />
-      <CheckoutFab />
       <BottomNav />
     </>
   );
@@ -92,6 +92,14 @@ export default function App() {
                   element={
                     <ProtectedRoute>
                       <AdminPos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/banners"
+                  element={
+                    <ProtectedRoute>
+                      <AdminBanners />
                     </ProtectedRoute>
                   }
                 />

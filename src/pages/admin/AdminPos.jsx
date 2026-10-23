@@ -362,6 +362,7 @@ export default function AdminPos() {
           <div className="flex flex-wrap gap-2">
             <Link to="/admin/orders" className="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold">{t.orders}</Link>
             <Link to="/admin/products" className="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold">{t.products}</Link>
+            <Link to="/admin/banners" className="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold">{lang === 'bn' ? 'ব্যানার' : 'Banners'}</Link>
             <LanguageToggle />
           </div>
         </div>

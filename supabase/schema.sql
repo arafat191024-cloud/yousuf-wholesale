@@ -184,6 +184,23 @@ create policy "orders_delete_admin" on public.orders
   for delete using (public.is_admin());
 -- Live stock movements: supabase/migrations/20261007_stock_sync.sql
 
+-- PROMOTIONAL BANNERS: public reads live slides; admins manage them
+create table if not exists public.promotional_banners (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  image_url text not null,
+  target_link text default '/',
+  is_active boolean default true,
+  priority int default 0,
+  created_at timestamptz default now()
+);
+
+alter table public.promotional_banners enable row level security;
+create policy "banners_read_active_or_admin" on public.promotional_banners
+  for select using (is_active = true or public.is_admin());
+create policy "banners_admin_write" on public.promotional_banners
+  for all using (public.is_admin()) with check (public.is_admin());
+
 -- ORDER ITEMS: visible if you can see the parent order
 create policy "order_items_select" on public.order_items
   for select using (

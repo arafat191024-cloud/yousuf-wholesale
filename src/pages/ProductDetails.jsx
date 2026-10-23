@@ -10,6 +10,7 @@ import { availableUnits, priceUnitLabel, productSeries, productSizes } from '../
 import { useScrollLock } from '../lib/useScrollLock'
 import { QtyStepper } from '../components/QtyStepper'
 import { EmptyState } from '../components/EmptyState'
+import { useOverlayHistory } from '../lib/useOverlayHistory'
 
 function goBack(navigate, fallback) {
   const idx = window.history.state?.idx
@@ -28,6 +29,7 @@ export function ProductDetails() {
   const [variantId, setVariantId] = useState(null)
   const [qty, setQty] = useState(1)
   const [zoom, setZoom] = useState(false)
+  const closeZoom = useOverlayHistory(zoom, () => setZoom(false))
   useScrollLock(zoom)
 
   const cached = useMemo(
@@ -76,11 +78,11 @@ export function ProductDetails() {
   useEffect(() => {
     if (!zoom) return undefined
     function onKey(event) {
-      if (event.key === 'Escape') setZoom(false)
+      if (event.key === 'Escape') closeZoom()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [zoom])
+  }, [zoom, closeZoom])
 
   const categoryRow = useMemo(() => {
     if (!product) return null
@@ -366,10 +368,10 @@ export function ProductDetails() {
 
       {zoom && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0F172A]/80 p-4">
-          <button type="button" className="absolute inset-0" aria-label={t.close} onClick={() => setZoom(false)} />
+          <button type="button" className="absolute inset-0" aria-label={t.close} onClick={closeZoom} />
           <button
             type="button"
-            onClick={() => setZoom(false)}
+            onClick={closeZoom}
             className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-ink shadow-md"
             aria-label={t.close}
           >

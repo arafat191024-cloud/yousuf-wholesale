@@ -206,6 +206,87 @@ export async function compressProductImage(file, onProgress) {
   }
 }
 
+function sizedCanvas(source, width, height) {
+  let canvas
+  let ctx
+  if (typeof OffscreenCanvas === 'function') {
+    try {
+      canvas = new OffscreenCanvas(width, height)
+      ctx = canvas.getContext('2d', { alpha: false })
+    } catch {
+      canvas = null
+      ctx = null
+    }
+  }
+  if (!ctx) {
+    canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    ctx = canvas.getContext('2d', { alpha: false })
+  }
+  if (!ctx) throw fail('DECODE')
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, width, height)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(source, 0, 0, width, height)
+  return canvas
+}
+
+export async function uploadBannerImage(file, onProgress) {
+  if (!isImageFile(file)) throw fail('NOT_IMAGE')
+  const report = (percent) => {
+    if (typeof onProgress === 'function') onProgress(percent)
+  }
+  report(12)
+  const source = await decodeFile(file)
+  try {
+    const { width: naturalW, height: naturalH } = sourceSize(source)
+    if (!naturalW || !naturalH) throw fail('DECODE')
+    const scale = Math.min(1, 1600 / naturalW, 900 / naturalH)
+    const width = Math.max(1, Math.round(naturalW * scale))
+    const height = Math.max(1, Math.round(naturalH * scale))
+    const canvas = sizedCanvas(source, width, height)
+    report(50)
+    let quality = 0.82
+    let blob = null
+    try {
+      while (quality >= 0.5) {
+        blob = await canvasToBlob(canvas, quality)
+        if (blob && blob.size <= 450 * 1024) break
+        quality -= 0.08
+      }
+    } finally {
+      releaseCanvas(canvas)
+    }
+    if (!blob || blob.size >= MAX_BYTES) throw fail('TOO_LARGE')
+    const webp = new File([blob], `${cleanFileName(file.name)}.webp`, { type: 'image/webp' })
+    const path = `banners/${Date.now()}-${cleanFileName(file.name)}.webp`
+    report(90)
+    let uploadedBucket = ''
+    for (const bucket of ['banners', ...BUCKETS]) {
+      const { error } = await supabase.storage.from(bucket).upload(path, webp, {
+        cacheControl: '31536000',
+        upsert: false,
+        contentType: 'image/webp',
+      })
+      if (!error) {
+        uploadedBucket = bucket
+        break
+      }
+      console.error(error)
+    }
+    if (!uploadedBucket) throw fail('STORAGE')
+    const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(path)
+    const url = data?.publicUrl || ''
+    if (!url.startsWith('http') || isInlineImageUrl(url)) throw fail('STORAGE')
+    report(100)
+    return { url, bytes: webp.size, path }
+  } finally {
+    source.close?.()
+  }
+}
+
 export async function uploadProductImage(file, onProgress) {
   if (!isImageFile(file)) throw fail('NOT_IMAGE')
   const report = (percent) => {

@@ -6,6 +6,7 @@ import { categoryCopy } from '../lib/catalog'
 import { CategorySkeleton } from '../components/Skeletons'
 import { EmptyState } from '../components/EmptyState'
 import { CategoryIcon } from '../components/CategoryIcon'
+import { PromoBanner } from '../components/PromoBanner'
 
 export function Home() {
   const { categories, counts, loading } = useCatalog()
@@ -20,22 +21,7 @@ export function Home() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] px-5 py-8 text-white shadow-md sm:px-8 sm:py-10">
-        <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-amber-400/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-16 left-8 h-36 w-36 rounded-full bg-blue-500/20 blur-3xl" />
-        <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-bold text-amber-200">
-          {t.importer}
-        </span>
-        <h1 className="mt-3 max-w-2xl text-2xl font-extrabold leading-tight tracking-tight sm:text-4xl">{t.tagline}</h1>
-        <p className="mt-2 text-sm text-slate-300">{t.location}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {[t.trustRate, t.trustStock, t.importer].map((label) => (
-            <span key={label} className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-bold text-white">
-              {label}
-            </span>
-          ))}
-        </div>
-      </section>
+      <PromoBanner />
 
       <div id="categories" className="scroll-mt-48 pt-6">
         <div className="mb-4 flex items-end justify-between gap-3">

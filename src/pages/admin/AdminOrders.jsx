@@ -464,6 +464,7 @@ export default function AdminOrders() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/admin/products" className={actionBtn}>{t.products}</Link>
+            <Link to="/admin/banners" className={actionBtn}>{lang === 'bn' ? 'ব্যানার' : 'Banners'}</Link>
             <Link to="/admin/pos" className={actionBtn}>{t.memo}</Link>
             <LanguageToggle />
             <button type="button" onClick={fetchData} className="inline-flex min-h-11 items-center rounded-xl bg-ink px-4 text-xs font-bold text-white transition-all duration-200">
