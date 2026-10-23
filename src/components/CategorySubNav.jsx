@@ -14,7 +14,7 @@ const pillClass = (active) =>
       : 'border-slate-200/80 bg-white text-ink hover:shadow-md'
   }`
 
-export function CategorySubNav() {
+export function CategorySubNav({ onHome }) {
   const { lang, t } = useLanguage()
   const { categories } = useCatalog()
   const location = useLocation()
@@ -75,7 +75,12 @@ export function CategorySubNav() {
       <div className="relative">
         <div className="no-scrollbar overflow-x-auto overscroll-x-contain whitespace-nowrap">
           <div className="flex w-max items-center gap-2 whitespace-nowrap py-2.5">
-            <Link to="/" className={pillClass(homeActive)} aria-current={homeActive ? 'page' : undefined}>
+            <Link
+              to="/"
+              onClick={() => onHome?.()}
+              className={pillClass(homeActive)}
+              aria-current={homeActive ? 'page' : undefined}
+            >
               {label('হোম', 'Home')}
             </Link>
 

@@ -85,7 +85,7 @@ export function priceUnitLabel(product, lang = 'bn') {
 }
 
 export function productSearchText(product) {
-  return [product?.name, product?.product_code, productSeries(product), ...productSizes(product)]
+  return [product?.name, product?.description, product?.product_code, productSeries(product), ...productSizes(product)]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()

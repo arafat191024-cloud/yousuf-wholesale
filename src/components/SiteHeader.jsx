@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
 import { useLanguage } from '../context/LanguageContext'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
@@ -25,21 +26,57 @@ function IconChat() {
   )
 }
 
+function ClearSearchButton({ onClick, label }) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onClick()
+      }}
+      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+      aria-label={label}
+    >
+      <X size={16} />
+    </button>
+  )
+}
+
 export function SiteHeader() {
   const { lang, t } = useLanguage()
   const { totalCount, setIsCartOpen } = useCart()
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [query, setQuery] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
   const headerHidden = useHeaderAutoHide()
   const isCheckout = location.pathname === '/checkout'
   const collapsed = headerHidden && !isCheckout
 
+  useEffect(() => {
+    const q = new URLSearchParams(location.search).get('q')
+    if (location.pathname === '/' && !q) {
+      setSearchTerm('')
+      return
+    }
+    if (location.pathname === '/search') setSearchTerm(q || '')
+  }, [location.pathname, location.search])
+
+  function resetSearch() {
+    setSearchTerm('')
+  }
+
+  function clearSearch() {
+    setSearchTerm('')
+    const q = new URLSearchParams(location.search).get('q')
+    if (q || location.pathname === '/search') navigate('/', { replace: true })
+  }
+
   function onSearch(e) {
     e.preventDefault()
-    const q = query.trim()
-    navigate(q ? `/search?q=${encodeURIComponent(q)}` : '/search')
+    const q = searchTerm.trim()
+    navigate(q ? `/search?q=${encodeURIComponent(q)}` : '/')
   }
 
   const iconBtn = 'inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/80 bg-white text-sapphire shadow-sm transition-all duration-200 ease-out hover:shadow-md'
@@ -76,20 +113,21 @@ export function SiteHeader() {
 
       <div className={isCheckout ? 'hidden md:block' : undefined}>
       <div className={`${HEADER_SHELL} flex items-center gap-2 py-2.5 sm:gap-3`}>
-        <Link to="/" className="min-w-0 shrink-0">
+        <Link to="/" onClick={resetSearch} className="min-w-0 shrink-0">
           <span className="block text-[10px] font-bold text-brass">{t.importer}</span>
           <span className="block truncate text-base font-extrabold tracking-tight text-ink sm:text-lg">{t.shopName}</span>
         </Link>
 
-        <form onSubmit={onSearch} className="mx-auto hidden min-w-0 flex-1 md:block">
+        <form onSubmit={onSearch} className="relative mx-auto hidden min-w-0 flex-1 md:block">
           <label className="sr-only" htmlFor="site-search">{t.search}</label>
           <input
             id="site-search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             placeholder={t.searchPlaceholder}
-            className="h-11 w-full rounded-full border border-slate-200/80 bg-slate-50 px-4 text-sm outline-none transition-all duration-200 ease-out focus:border-ink focus:bg-white focus:shadow-sm"
+            className="h-11 w-full rounded-full border border-slate-200/80 bg-slate-50 pl-4 pr-10 text-sm outline-none transition-all duration-200 ease-out focus:border-ink focus:bg-white focus:shadow-sm"
           />
+          {searchTerm && <ClearSearchButton onClick={clearSearch} label={t.clearSearch} />}
         </form>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
@@ -150,18 +188,19 @@ export function SiteHeader() {
       </div>
 
       <div className={`${HEADER_SHELL} flex items-center gap-2 pb-3 md:hidden`}>
-        <form onSubmit={onSearch} className="min-w-0 flex-1">
+        <form onSubmit={onSearch} className="relative min-w-0 flex-1">
           <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             placeholder={t.searchPlaceholder}
             aria-label={t.search}
-            className="h-11 w-full rounded-full border border-slate-200/80 bg-slate-50 px-4 text-sm outline-none transition-all duration-200 ease-out focus:border-ink focus:bg-white"
+            className="h-11 w-full rounded-full border border-slate-200/80 bg-slate-50 pl-4 pr-10 text-sm outline-none transition-all duration-200 ease-out focus:border-ink focus:bg-white"
           />
+          {searchTerm && <ClearSearchButton onClick={clearSearch} label={t.clearSearch} />}
         </form>
         <LanguageToggle />
       </div>
-      <CategorySubNav />
+      <CategorySubNav onHome={resetSearch} />
       </div>
     </header>
   )

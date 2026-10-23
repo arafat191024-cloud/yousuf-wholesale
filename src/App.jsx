@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 
 import { Home } from './pages/Home';
 import CategoryPage from './pages/CategoryPage';
+import { ProductDetails } from './pages/ProductDetails';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { Orders } from './pages/Orders';
@@ -58,6 +59,7 @@ export default function App() {
             <Shell>
               <Routes>
                 <Route path="/" element={<Home />} />
+                <Route path="/product/:id" element={<ProductDetails />} />
                 <Route path="/category/:slug" element={<CategoryPage />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/offers" element={<OffersPage />} />

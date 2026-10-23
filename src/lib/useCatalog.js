@@ -5,29 +5,48 @@ import { useLiveStock } from './stockSync'
 let cache = null
 let inflight = null
 
+export const PRODUCT_SELECT = 'id, name, description, price, stock, image_url, product_code, series, size, min_wholesale_qty, unit, category_id, is_active, created_at, product_variants(*), categories(slug, name)'
+
+async function selectProducts(id) {
+  let query = supabase.from('products').select(PRODUCT_SELECT)
+  query = id ? query.eq('id', id).maybeSingle() : query.eq('is_active', true).order('created_at', { ascending: false })
+  const detailed = await query
+  if (!detailed.error) return detailed
+
+  let fallback = supabase.from('products').select('*, product_variants(*), categories(slug, name)')
+  fallback = id ? fallback.eq('id', id).maybeSingle() : fallback.eq('is_active', true).order('created_at', { ascending: false })
+  return fallback
+}
+
+export async function fetchProductById(id) {
+  const { data, error } = await selectProducts(id)
+  if (error) throw error
+  return data || null
+}
+
 async function loadCatalog() {
   if (cache) return cache
   if (inflight) return inflight
   inflight = (async () => {
-    const primary = await supabase.from('categories').select('*').order('display_order', { ascending: true })
-    let rows = primary.data
-    if (primary.error) {
-      const fallback = await supabase.from('categories').select('*')
-      rows = fallback.data
+    try {
+      const primary = await supabase.from('categories').select('*').order('display_order', { ascending: true })
+      let rows = primary.data
+      if (primary.error) {
+        const fallback = await supabase.from('categories').select('*')
+        rows = fallback.data
+      }
+      const { data: products, error } = await selectProducts()
+      if (error) console.error(error)
+      const nextCounts = {}
+      ;(products || []).forEach((row) => {
+        if (!row.category_id) return
+        nextCounts[row.category_id] = (nextCounts[row.category_id] || 0) + 1
+      })
+      cache = { categories: rows || [], products: products || [], counts: nextCounts }
+      return cache
+    } finally {
+      inflight = null
     }
-    const { data: products } = await supabase
-      .from('products')
-      .select('*, product_variants(*), categories(slug, name)')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-    const nextCounts = {}
-    ;(products || []).forEach((row) => {
-      if (!row.category_id) return
-      nextCounts[row.category_id] = (nextCounts[row.category_id] || 0) + 1
-    })
-    cache = { categories: rows || [], products: products || [], counts: nextCounts }
-    inflight = null
-    return cache
   })()
   return inflight
 }
