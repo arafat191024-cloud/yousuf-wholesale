@@ -7,6 +7,7 @@ import { CategorySkeleton } from '../components/Skeletons'
 import { EmptyState } from '../components/EmptyState'
 import { CategoryIcon } from '../components/CategoryIcon'
 import { PromoBanner } from '../components/PromoBanner'
+import { HEADER_SHELL } from '../lib/layout'
 
 export function Home() {
   const { categories, counts, loading } = useCatalog()
@@ -20,10 +21,10 @@ export function Home() {
   }, [location.hash, loading])
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-4">
+    <div className="pb-4">
       <PromoBanner />
 
-      <div id="categories" className="scroll-mt-48 pt-6">
+      <div id="categories" className={`${HEADER_SHELL} scroll-mt-48`}>
         <div className="mb-4 flex items-end justify-between gap-3">
           <h2 className="text-lg font-extrabold tracking-tight text-ink">{t.categories}</h2>
         </div>
